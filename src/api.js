@@ -237,5 +237,23 @@ adminGetAssets: (params = {}) => {
     method: 'DELETE',
   }),
 
+  // GDPR
+  gdprGetProcessing: () => request('/api/gdpr/processing'),
+  gdprCreateProcessing: (data) => request('/api/gdpr/processing', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  gdprUpdateProcessing: (id, data) => request(`/api/gdpr/processing/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  gdprDeleteProcessing: (id) => request(`/api/gdpr/processing/${id}`, {
+    method: 'DELETE',
+  }),
+  gdprExportUrl: () => {
+    const token = localStorage.getItem('ht_token')
+    return `http://localhost:3001/api/gdpr/export?token=${token}`
+  },
+
 
 }

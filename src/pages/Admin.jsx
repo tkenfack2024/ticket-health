@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield } from 'lucide-react'
+import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield, FileText } from 'lucide-react'
 import AdminUsers from './admin/Users'
 import AdminModules from './admin/Modules'
 import AdminAssets from './admin/Assets'
@@ -7,6 +7,7 @@ import AdminLogs from './admin/Logs'
 import AdminArchive from './admin/Archive'
 import AdminSla from './admin/Sla'
 import AdminPermissions from './admin/Permissions'
+import AdminGdpr from './admin/Gdpr'
 
 const TABS = [
   { id: 'users', label: 'Utilisateurs', icon: Users },
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'sla', label: 'SLA', icon: Clock },
   { id: 'logs', label: 'Logs', icon: ScrollText },
   { id: 'archive', label: 'Archive', icon: Archive },
+  { id: 'gdpr', label: 'RGPD', icon: FileText },
 ]
 
 export default function Admin() {
@@ -58,6 +60,7 @@ export default function Admin() {
       {activeTab === 'sla' && <AdminSla />}
       {activeTab === 'logs' && <AdminLogs />}
       {activeTab === 'archive' && <AdminArchive />}
+      {activeTab === 'gdpr' && <AdminGdpr />}
     </div>
   )
 }

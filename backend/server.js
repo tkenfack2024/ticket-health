@@ -10,6 +10,7 @@ import { logStartup } from './version.js'
 import { initSlaTables, applySlaToTicket, pauseSla, resumeSla, createSlaRouter, computeSlaStatus, PAUSE_STATUS } from './sla.js'
 import { startSlaCron } from './sla-cron.js'
 import { initKnowledgeTables, createKnowledgeRouter } from './knowledge.js'
+import { initGdprTables, createGdprRouter } from './gdpr.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -212,6 +213,9 @@ if (permsCount === 0) {
 // Initialiser les tables Knowledge Base
 initKnowledgeTables(db)
 
+// Initialiser le registre GDPR
+initGdprTables(db)
+
 // ==================== HELPERS ====================
 
 function logAction(userId, userName, action, entity, entityId, details) {
@@ -254,6 +258,7 @@ app.use('/api/admin', createAdminRouter(db, logAction))
 
 app.use('/api/sla', createSlaRouter(db, logAction))
 app.use('/api/kb', createKnowledgeRouter(db, logAction))
+app.use('/api/gdpr', createGdprRouter(db, logAction))
 
 // ==================== ROUTES : TICKETS ====================
 
