@@ -6,6 +6,9 @@ import Dashboard from './pages/Dashboard'
 import TicketList from './pages/TicketList'
 import CreateTicket from './pages/CreateTicket'
 import TicketDetail from './pages/TicketDetail'
+import Knowledge from './pages/Knowledge'
+import KnowledgeArticle from './pages/KnowledgeArticle'
+import KnowledgeEdit from './pages/KnowledgeEdit'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Admin from './pages/Admin'
@@ -23,6 +26,10 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="tickets" element={<TicketList />} />
           <Route path="tickets/:id" element={<TicketDetail />} />
+	  <Route path="knowledge" element={<Knowledge />} />
+	  <Route path="knowledge/new" element={<KnowledgeEdit />} />
+	  <Route path="knowledge/:id/edit" element={<KnowledgeEdit />} />
+	  <Route path="knowledge/:id" element={<KnowledgeArticle />} />
           <Route
             path="tickets/new"
             element={

@@ -9,6 +9,7 @@ import {
   LogIn,
   UserPlus,
   Shield,
+  BookOpen,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -57,10 +58,10 @@ export default function Layout() {
             <Ticket size={20} />
             Tous les tickets
           </NavLink>
-          <NavLink to="/tickets/new" className={linkClass}>
-            <PlusCircle size={20} />
-            Nouveau ticket
-          </NavLink>
+		<NavLink to="/knowledge" className={linkClass}>
+  			<BookOpen size={20} />
+  			Base de connaissances
+		</NavLink>
 
           {isAdmin && (
             <NavLink to="/admin" className={linkClass}>

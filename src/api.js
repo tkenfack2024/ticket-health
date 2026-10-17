@@ -226,5 +226,16 @@ adminGetAssets: (params = {}) => {
     return `${API_URL}/api/admin/logs/export${qs ? '?' + qs : ''}`
   },
 
+  // Permissions
+  adminGetPermissions: () => request('/api/admin/permissions'),
+  adminGetUsersPermissions: () => request('/api/admin/users-permissions'),
+  adminGrantPermission: (userId, code) => request(`/api/admin/users/${userId}/permissions`, {
+    method: 'POST',
+    body: JSON.stringify({ permission_code: code }),
+  }),
+  adminRevokePermission: (userId, code) => request(`/api/admin/users/${userId}/permissions/${code}`, {
+    method: 'DELETE',
+  }),
+
 
 }

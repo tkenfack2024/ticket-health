@@ -762,5 +762,107 @@ export function createAdminRouter(db, logAction) {
     res.send('\uFEFF' + csv)
   })
 
+  // ==================== PERMISSIONS ====================
+
+  // ---- GET /api/admin/permissions ----
+  // Liste toutes les permissions disponibles
+  router.get('/permissions', (req, res) => {
+    const permissions = db.prepare('SELECT * FROM permissions ORDER BY module, code').all()
+    res.json(permissions)
+  })
+
+  // ---- GET /api/admin/users-permissions ----
+  // Liste tous les users avec leurs permissions
+  router.get('/users-permissions', (req, res) => {
+    const users = db.prepare(`
+      SELECT id, name, email, role, active FROM users ORDER BY id ASC
+    `).all()
+
+    const result = users.map(user => {
+      // Récupérer les permissions de cet user
+      const perms = user.role === 'admin'
+        ? db.prepare('SELECT code FROM permissions').all().map(p => p.code)
+        : db.prepare('SELECT permission_code as code FROM user_permissions WHERE user_id = ?')
+            .all(user.id).map(p => p.code)
+
+      return {
+        ...user,
+        permissions: perms,
+        isAdmin: user.role === 'admin',
+      }
+    })
+
+    res.json(result)
+  })
+
+  // ---- POST /api/admin/users/:id/permissions ----
+  // Ajouter une permission à un user
+  router.post('/users/:id/permissions', (req, res) => {
+    const targetId = parseInt(req.params.id)
+    const { permission_code } = req.body
+
+    if (!permission_code) {
+      return res.status(400).json({ error: 'permission_code obligatoire' })
+    }
+
+    const user = db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(targetId)
+    if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' })
+
+    // Les admins ont déjà tout
+    if (user.role === 'admin') {
+      return res.status(400).json({ error: 'Les admins ont déjà toutes les permissions' })
+    }
+
+    // Vérifier que la permission existe
+    const perm = db.prepare('SELECT code FROM permissions WHERE code = ?').get(permission_code)
+    if (!perm) return res.status(404).json({ error: 'Permission inexistante' })
+
+    // Vérifier si déjà accordée
+    const existing = db.prepare(`
+      SELECT id FROM user_permissions WHERE user_id = ? AND permission_code = ?
+    `).get(targetId, permission_code)
+
+    if (existing) {
+      return res.status(409).json({ error: 'Permission déjà accordée' })
+    }
+
+    db.prepare(`
+      INSERT INTO user_permissions (user_id, permission_code, granted_by_id, granted_by_name)
+      VALUES (?, ?, ?, ?)
+    `).run(targetId, permission_code, req.user.id, req.user.name)
+
+    logAction(req.user.id, req.user.name, 'grant', 'permission', targetId,
+      `Permission "${permission_code}" accordée à ${user.name}`)
+
+    res.status(201).json({ success: true })
+  })
+
+  // ---- DELETE /api/admin/users/:id/permissions/:code ----
+  // Révoquer une permission
+  router.delete('/users/:id/permissions/:code', (req, res) => {
+    const targetId = parseInt(req.params.id)
+    const permissionCode = req.params.code
+
+    const user = db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(targetId)
+    if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' })
+
+    if (user.role === 'admin') {
+      return res.status(400).json({ error: 'Impossible de révoquer les permissions d\'un admin' })
+    }
+
+    const result = db.prepare(`
+      DELETE FROM user_permissions WHERE user_id = ? AND permission_code = ?
+    `).run(targetId, permissionCode)
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Permission non trouvée pour cet utilisateur' })
+    }
+
+    logAction(req.user.id, req.user.name, 'revoke', 'permission', targetId,
+      `Permission "${permissionCode}" révoquée à ${user.name}`)
+
+    res.json({ success: true })
+  })
+
   return router
 }

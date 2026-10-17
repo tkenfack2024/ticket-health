@@ -9,6 +9,7 @@ import { createAdminRouter } from './admin.js'
 import { logStartup } from './version.js'
 import { initSlaTables, applySlaToTicket, pauseSla, resumeSla, createSlaRouter, computeSlaStatus, PAUSE_STATUS } from './sla.js'
 import { startSlaCron } from './sla-cron.js'
+import { initKnowledgeTables, createKnowledgeRouter } from './knowledge.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -165,6 +166,52 @@ if (!ticketColumns.includes('archived_at')) {
 // Initialiser les tables SLA
 initSlaTables(db)
 
+// ==================== TABLES PERMISSIONS ====================
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,
+    label TEXT NOT NULL,
+    module TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    permission_code TEXT NOT NULL,
+    granted_by_id INTEGER,
+    granted_by_name TEXT,
+    granted_at TEXT DEFAULT (datetime('now', 'localtime')),
+    UNIQUE(user_id, permission_code),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )
+`)
+
+// Seed des permissions par défaut
+const permsCount = db.prepare('SELECT COUNT(*) as c FROM permissions').get().c
+if (permsCount === 0) {
+  const defaultPerms = [
+    ['kb.read', 'Lire la base de connaissances', 'kb', 'Accès à la base de connaissances'],
+    ['kb.write', 'Créer/modifier des articles', 'kb', 'Peut écrire et modifier des articles'],
+    ['kb.publish', 'Publier des articles', 'kb', 'Peut publier directement (sans validation)'],
+    ['assets.write', 'Modifier les assets', 'assets', 'Peut créer/modifier les équipements'],
+    ['users.manage', 'Gérer les utilisateurs', 'users', 'Peut gérer les comptes utilisateurs'],
+    ['logs.view', 'Voir les logs', 'logs', 'Peut consulter le journal d\'activité'],
+    ['tickets.all', 'Voir tous les tickets', 'tickets', 'Peut voir tous les tickets'],
+  ]
+  const insert = db.prepare('INSERT INTO permissions (code, label, module, description) VALUES (?, ?, ?, ?)')
+  for (const p of defaultPerms) insert.run(...p)
+  console.log('✅ Permissions par défaut créées')
+}
+
+// Initialiser les tables Knowledge Base
+initKnowledgeTables(db)
+
 // ==================== HELPERS ====================
 
 function logAction(userId, userName, action, entity, entityId, details) {
@@ -206,6 +253,7 @@ app.use('/api/auth', createAuthRouter(db, logAction))
 app.use('/api/admin', createAdminRouter(db, logAction))
 
 app.use('/api/sla', createSlaRouter(db, logAction))
+app.use('/api/kb', createKnowledgeRouter(db, logAction))
 
 // ==================== ROUTES : TICKETS ====================
 

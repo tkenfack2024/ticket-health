@@ -4,6 +4,7 @@ import { ArrowLeft, MessageSquare, User, Loader2, Archive, Package, Hash, MapPin
 import { api } from '../api'
 import { useAuth } from '../context/AuthContext'
 import SlaPanel from '../components/SlaPanel'
+import KbSuggestions from '../components/KbSuggestions'
 
 export default function TicketDetail() {
   const { id } = useParams()
@@ -279,6 +280,10 @@ export default function TicketDetail() {
             </div>
           </div>
         )}
+
+	{/* Suggestions d'articles KB */}
+	<KbSuggestions ticketId={parseInt(id)} ticketLoaded={!!ticket} />
+
 
         {/* SLA */}
         <SlaPanel ticket={ticket} />
