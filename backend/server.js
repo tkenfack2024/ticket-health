@@ -11,6 +11,7 @@ import { initSlaTables, applySlaToTicket, pauseSla, resumeSla, createSlaRouter, 
 import { startSlaCron } from './sla-cron.js'
 import { initKnowledgeTables, createKnowledgeRouter } from './knowledge.js'
 import { initGdprTables, createGdprRouter } from './gdpr.js'
+import { createIncidentsRouter } from './incidents.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -135,6 +136,32 @@ db.exec(`
   )
 `)
 
+// ==================== TABLES PERMISSIONS ====================
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,
+    label TEXT NOT NULL,
+    module TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+  )
+`)
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    permission_code TEXT NOT NULL,
+    granted_by_id INTEGER,
+    granted_by_name TEXT,
+    granted_at TEXT DEFAULT (datetime('now', 'localtime')),
+    UNIQUE(user_id, permission_code),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )
+`)
+
 // ==================== MIGRATIONS ====================
 
 const ticketColumns = db.prepare("PRAGMA table_info(tickets)").all().map(c => c.name)
@@ -167,33 +194,57 @@ if (!ticketColumns.includes('archived_at')) {
 // Initialiser les tables SLA
 initSlaTables(db)
 
-// ==================== TABLES PERMISSIONS ====================
+// ==================== MIGRATIONS INCIDENTS (DORA/BAIT) ====================
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS permissions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT UNIQUE NOT NULL,
-    label TEXT NOT NULL,
-    module TEXT NOT NULL,
-    description TEXT,
-    created_at TEXT DEFAULT (datetime('now', 'localtime'))
-  )
-`)
+const ticketColumnsIncidents = db.prepare("PRAGMA table_info(tickets)").all().map(c => c.name)
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS user_permissions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    permission_code TEXT NOT NULL,
-    granted_by_id INTEGER,
-    granted_by_name TEXT,
-    granted_at TEXT DEFAULT (datetime('now', 'localtime')),
-    UNIQUE(user_id, permission_code),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  )
-`)
+if (!ticketColumnsIncidents.includes('incident_type')) {
+  db.exec("ALTER TABLE tickets ADD COLUMN incident_type TEXT NOT NULL DEFAULT 'standard'")
+  console.log('🔧 Migration Incidents : colonne incident_type ajoutée')
+}
 
-// Seed des permissions par défaut
+if (!ticketColumnsIncidents.includes('is_dora_major')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN is_dora_major INTEGER NOT NULL DEFAULT 0')
+  console.log('🔧 Migration Incidents : colonne is_dora_major ajoutée')
+}
+
+if (!ticketColumnsIncidents.includes('dora_criteria')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN dora_criteria TEXT')
+  console.log('🔧 Migration Incidents : colonne dora_criteria ajoutée')
+}
+
+if (!ticketColumnsIncidents.includes('dora_notification_date')) {
+  db.exec('ALTER TABLE tickets ADD COLUMN dora_notification_date TEXT')
+  console.log('🔧 Migration Incidents : colonne dora_notification_date ajoutée')
+}
+
+// ==================== MIGRATIONS LOGS (NIST AU-6) ====================
+
+const logColumns = db.prepare('PRAGMA table_info(logs)').all().map(c => c.name)
+
+if (!logColumns.includes('reviewed')) {
+  db.exec('ALTER TABLE logs ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0')
+  console.log('🔧 Migration Logs : colonne reviewed ajoutée')
+}
+
+if (!logColumns.includes('reviewed_by')) {
+  db.exec('ALTER TABLE logs ADD COLUMN reviewed_by TEXT')
+  console.log('🔧 Migration Logs : colonne reviewed_by ajoutée')
+}
+
+if (!logColumns.includes('reviewed_at')) {
+  db.exec('ALTER TABLE logs ADD COLUMN reviewed_at TEXT')
+  console.log('🔧 Migration Logs : colonne reviewed_at ajoutée')
+}
+
+// Initialiser les tables Knowledge Base
+initKnowledgeTables(db)
+
+// Initialiser le registre GDPR
+initGdprTables(db)
+
+// ==================== SEED : Permissions ====================
+
 const permsCount = db.prepare('SELECT COUNT(*) as c FROM permissions').get().c
 if (permsCount === 0) {
   const defaultPerms = [
@@ -210,12 +261,6 @@ if (permsCount === 0) {
   console.log('✅ Permissions par défaut créées')
 }
 
-// Initialiser les tables Knowledge Base
-initKnowledgeTables(db)
-
-// Initialiser le registre GDPR
-initGdprTables(db)
-
 // ==================== HELPERS ====================
 
 function logAction(userId, userName, action, entity, entityId, details) {
@@ -225,7 +270,7 @@ function logAction(userId, userName, action, entity, entityId, details) {
   `).run(userId || null, userName || 'Système', action, entity, entityId || null, details || null)
 }
 
-// ==================== SEED ====================
+// ==================== SEED : Admin & Modules ====================
 
 const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@healthticket.local')
 if (!adminExists) {
@@ -255,10 +300,10 @@ if (modulesExist === 0) {
 
 app.use('/api/auth', createAuthRouter(db, logAction))
 app.use('/api/admin', createAdminRouter(db, logAction))
-
 app.use('/api/sla', createSlaRouter(db, logAction))
 app.use('/api/kb', createKnowledgeRouter(db, logAction))
 app.use('/api/gdpr', createGdprRouter(db, logAction))
+app.use('/api/incidents', createIncidentsRouter(db, logAction))
 
 // ==================== ROUTES : TICKETS ====================
 
@@ -266,7 +311,7 @@ app.get('/', (req, res) => {
   res.json({ message: 'API HealthTicket fonctionne !' })
 })
 
-// ---- GET /api/tickets (avec filtre par rôle) ----
+// ---- GET /api/tickets ----
 app.get('/api/tickets', authRequired, (req, res) => {
   const { archived, assigned_to } = req.query
 
@@ -278,12 +323,10 @@ app.get('/api/tickets', authRequired, (req, res) => {
   `
   const params = []
 
-  // Filtre archivage
   query += archived === 'true' ? ' AND t.archived = 1' : ' AND t.archived = 0'
 
-  // Filtre par rôle
   if (req.user.role === 'admin') {
-    // Admin : voit tout, pas de filtre supplémentaire
+    // Admin : voit tout
   } else if (req.user.role === 'technicien') {
     query += ` AND (t.assignee = ? OR t.created_by = ?)`
     params.push(req.user.email, req.user.id)
@@ -292,7 +335,6 @@ app.get('/api/tickets', authRequired, (req, res) => {
     params.push(req.user.id, req.user.email)
   }
 
-  // Filtre assignation explicite (pour admin)
   if (assigned_to) {
     query += ' AND t.assignee = ?'
     params.push(assigned_to)
@@ -302,7 +344,7 @@ app.get('/api/tickets', authRequired, (req, res) => {
 
   const tickets = db.prepare(query).all(...params)
 
-  // Enrichir chaque ticket avec l'état SLA
+  // Enrichir avec l'état SLA
   for (const t of tickets) {
     t.sla_status = computeSlaStatus(t)
   }
@@ -334,160 +376,104 @@ app.get('/api/tickets/:id', authRequired, (req, res) => {
   if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
   if (req.user.role !== 'admin') {
-    const canAccess =
-      ticket.created_by === req.user.id ||
-      ticket.assignee === req.user.email
-    if (!canAccess) {
-      return res.status(403).json({ error: 'Accès refusé à ce ticket' })
-    }
+    const canAccess = ticket.created_by === req.user.id || ticket.assignee === req.user.email
+    if (!canAccess) return res.status(403).json({ error: 'Accès refusé à ce ticket' })
   }
 
-  // Ajouter l'état SLA calculé
   ticket.sla_status = computeSlaStatus(ticket)
-
   res.json(ticket)
 })
 
-// ==================== ROUTES : ASSETS (public) ====================
-// Accessible à tous les utilisateurs connectés
-// Ne renvoie PAS les champs sensibles (license_key, notes...)
-
-app.get('/api/assets', authRequired, (req, res) => {
-  const { type, module_name } = req.query
-
-  let query = `
-    SELECT
-      id, type, name, category, brand, model, serial_number,
-      location, status, editor, version, license_count
-    FROM assets
-    WHERE 1=1
-  `
-  const params = []
-
-  if (type && ['hardware', 'software'].includes(type)) {
-    query += ' AND type = ?'
-    params.push(type)
-  }
-
-  // Filtrer les assets par catégorie qui matche le nom du module
-  // Ex: module "Informatique" → assets avec category "Ordinateur", "Imprimante"...
-  // Pour l'instant, on n'a pas de lien direct, donc on accepte un search libre
-  if (module_name) {
-    // Note: on utilise LIKE pour un match souple
-    query += ' AND (category LIKE ? OR name LIKE ?)'
-    const search = `%${module_name}%`
-    params.push(search, search)
-  }
-
-  query += ' ORDER BY type ASC, name ASC'
-
-  const assets = db.prepare(query).all(...params)
-  res.json(assets)
-})
-
-// Route pour récupérer UN asset public (sans champs sensibles)
-app.get('/api/assets/:id', authRequired, (req, res) => {
-  const asset = db.prepare(`
-    SELECT
-      id, type, name, category, brand, model, serial_number,
-      location, status, editor, version, license_count
-    FROM assets
-    WHERE id = ?
-  `).get(req.params.id)
-
-  if (!asset) return res.status(404).json({ error: 'Asset non trouvé' })
-  res.json(asset)
-})
-
-// ---- POST /api/tickets (création) ----
+// ---- POST /api/tickets ----
 app.post('/api/tickets', authRequired, (req, res) => {
   const { title, category, priority, description, asset_id } = req.body
   if (!title || !category || !priority) {
     return res.status(400).json({ error: 'Titre, catégorie et priorité sont obligatoires' })
   }
 
-  // Vérifier que l'asset existe si fourni
   if (asset_id) {
     const asset = db.prepare('SELECT id FROM assets WHERE id = ?').get(asset_id)
-    if (!asset) {
-      return res.status(400).json({ error: 'Asset introuvable' })
-    }
+    if (!asset) return res.status(400).json({ error: 'Asset introuvable' })
   }
 
   const result = db.prepare(`
     INSERT INTO tickets (title, category, priority, description, created_by, creator, asset_id)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    title, category, priority, description || '',
-    req.user.id, req.user.name,
-    asset_id || null
-  )
+  `).run(title, category, priority, description || '', req.user.id, req.user.name, asset_id || null)
 
-// Appliquer le SLA automatiquement
-applySlaToTicket(db, result.lastInsertRowid, priority)
+  applySlaToTicket(db, result.lastInsertRowid, priority)
 
-const newTicket = db.prepare(`
-  SELECT t.*, u.name as assigned_to_name
-  FROM tickets t
-  LEFT JOIN users u ON t.assignee = u.email
-  WHERE t.id = ?
-`).get(result.lastInsertRowid)
+  const newTicket = db.prepare(`
+    SELECT t.*, u.name as assigned_to_name
+    FROM tickets t
+    LEFT JOIN users u ON t.assignee = u.email
+    WHERE t.id = ?
+  `).get(result.lastInsertRowid)
 
-// Ajouter l'état SLA calculé
-newTicket.sla_status = computeSlaStatus(newTicket)
-
-logAction(req.user.id, req.user.name, 'create', 'ticket', newTicket.id, `Ticket créé : ${newTicket.title}`)
-res.status(201).json(newTicket)
+  newTicket.sla_status = computeSlaStatus(newTicket)
+  logAction(req.user.id, req.user.name, 'create', 'ticket', newTicket.id, `Ticket créé : ${newTicket.title}`)
+  res.status(201).json(newTicket)
 })
 
 // ---- PATCH /api/tickets/:id ----
 app.patch('/api/tickets/:id', authRequired, (req, res) => {
-  const { status, assignee } = req.body
+  const { status, assignee, incident_type, is_dora_major, dora_criteria, dora_notification_date } = req.body
   const targetId = parseInt(req.params.id)
 
   const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(targetId)
   if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
-  // Seul un admin peut changer l'assignation
   if (assignee !== undefined && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Seuls les admins peuvent assigner un ticket' })
   }
 
-  // Vérifier que l'utilisateur assigné existe (si on assigne)
   if (assignee) {
     const targetUser = db.prepare('SELECT email FROM users WHERE email = ?').get(assignee)
-    if (!targetUser) {
-      return res.status(400).json({ error: 'Utilisateur assigné introuvable' })
+    if (!targetUser) return res.status(400).json({ error: 'Utilisateur assigné introuvable' })
+  }
+
+  if (incident_type && !['standard', 'security', 'major'].includes(incident_type)) {
+    return res.status(400).json({ error: 'Type d\'incident invalide' })
+  }
+
+  if (is_dora_major === true && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Seuls les admins peuvent classifier un incident DORA majeur' })
+  }
+
+  const previousStatus = ticket.status
+
+  db.prepare(`
+    UPDATE tickets
+    SET status = COALESCE(?, status),
+        assignee = CASE WHEN ? IS NULL THEN assignee ELSE ? END,
+        incident_type = COALESCE(?, incident_type),
+        is_dora_major = COALESCE(?, is_dora_major),
+        dora_criteria = COALESCE(?, dora_criteria),
+        dora_notification_date = COALESCE(?, dora_notification_date)
+    WHERE id = ?
+  `).run(
+    status || null,
+    assignee === undefined ? null : assignee,
+    assignee === undefined ? null : (assignee || '-'),
+    incident_type || null,
+    is_dora_major !== undefined ? (is_dora_major ? 1 : 0) : null,
+    dora_criteria !== undefined ? (typeof dora_criteria === 'string' ? dora_criteria : JSON.stringify(dora_criteria)) : null,
+    dora_notification_date || null,
+    targetId
+  )
+
+  // Gestion SLA pause/relance
+  if (status && status !== previousStatus) {
+    if (status === PAUSE_STATUS) {
+      pauseSla(db, targetId)
+    } else if (previousStatus === PAUSE_STATUS) {
+      resumeSla(db, targetId)
+    }
+
+    if (status === 'Résolu') {
+      db.prepare('UPDATE tickets SET resolved_at = datetime(\'now\', \'localtime\') WHERE id = ?').run(targetId)
     }
   }
-
-const previousStatus = ticket.status
-
-db.prepare(`
-  UPDATE tickets
-  SET status = COALESCE(?, status),
-      assignee = CASE WHEN ? IS NULL THEN assignee ELSE ? END
-  WHERE id = ?
-`).run(
-  status || null,
-  assignee === undefined ? null : assignee,
-  assignee === undefined ? null : (assignee || '-'),
-  targetId
-)
-
-// Gestion SLA pause/relance
-if (status && status !== previousStatus) {
-  if (status === PAUSE_STATUS) {
-    pauseSla(db, targetId)
-  } else if (previousStatus === PAUSE_STATUS) {
-    resumeSla(db, targetId)
-  }
-
-  // Marquer resolved_at si on passe à Résolu
-  if (status === 'Résolu') {
-    db.prepare('UPDATE tickets SET resolved_at = datetime(\'now\', \'localtime\') WHERE id = ?').run(targetId)
-  }
-}
 
   const updated = db.prepare(`
     SELECT t.*, u.name as assigned_to_name
@@ -496,9 +482,13 @@ if (status && status !== previousStatus) {
     WHERE t.id = ?
   `).get(targetId)
 
+  updated.sla_status = computeSlaStatus(updated)
+
   const actionDetails = []
   if (status) actionDetails.push(`Statut : ${updated.status}`)
   if (assignee !== undefined) actionDetails.push(`Assigné à : ${updated.assignee || 'Personne'}`)
+  if (incident_type) actionDetails.push(`Type : ${updated.incident_type}`)
+  if (is_dora_major !== undefined) actionDetails.push(`DORA majeur : ${updated.is_dora_major ? 'oui' : 'non'}`)
 
   logAction(req.user.id, req.user.name, 'update', 'ticket', targetId, actionDetails.join(' | '))
   res.json(updated)
@@ -510,8 +500,7 @@ app.post('/api/tickets/:id/archive', authRequired, adminOnly, (req, res) => {
   if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
   db.prepare(`
-    UPDATE tickets SET archived = 1, archived_at = datetime('now', 'localtime')
-    WHERE id = ?
+    UPDATE tickets SET archived = 1, archived_at = datetime('now', 'localtime') WHERE id = ?
   `).run(req.params.id)
 
   logAction(req.user.id, req.user.name, 'archive', 'ticket', req.params.id, 'Ticket archivé')
@@ -526,12 +515,8 @@ app.get('/api/tickets/:id/comments', authRequired, (req, res) => {
   if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
   if (req.user.role !== 'admin') {
-    const canAccess =
-      ticket.created_by === req.user.id ||
-      ticket.assignee === req.user.email
-    if (!canAccess) {
-      return res.status(403).json({ error: 'Accès refusé à ce ticket' })
-    }
+    const canAccess = ticket.created_by === req.user.id || ticket.assignee === req.user.email
+    if (!canAccess) return res.status(403).json({ error: 'Accès refusé à ce ticket' })
   }
 
   const comments = db.prepare(
@@ -551,12 +536,8 @@ app.post('/api/tickets/:id/comments', authRequired, (req, res) => {
   if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
   if (req.user.role !== 'admin') {
-    const canAccess =
-      ticket.created_by === req.user.id ||
-      ticket.assignee === req.user.email
-    if (!canAccess) {
-      return res.status(403).json({ error: 'Accès refusé à ce ticket' })
-    }
+    const canAccess = ticket.created_by === req.user.id || ticket.assignee === req.user.email
+    if (!canAccess) return res.status(403).json({ error: 'Accès refusé à ce ticket' })
   }
 
   const result = db.prepare(`
@@ -567,6 +548,50 @@ app.post('/api/tickets/:id/comments', authRequired, (req, res) => {
   res.status(201).json(newComment)
 })
 
+// ==================== ROUTES : ASSETS (public) ====================
+
+app.get('/api/assets', authRequired, (req, res) => {
+  const { type, module_name } = req.query
+
+  let query = `
+    SELECT
+      id, type, name, category, brand, model, serial_number,
+      location, status, editor, version, license_count
+    FROM assets
+    WHERE 1=1
+  `
+  const params = []
+
+  if (type && ['hardware', 'software'].includes(type)) {
+    query += ' AND type = ?'
+    params.push(type)
+  }
+
+  if (module_name) {
+    query += ' AND (category LIKE ? OR name LIKE ?)'
+    const search = `%${module_name}%`
+    params.push(search, search)
+  }
+
+  query += ' ORDER BY type ASC, name ASC'
+
+  const assets = db.prepare(query).all(...params)
+  res.json(assets)
+})
+
+app.get('/api/assets/:id', authRequired, (req, res) => {
+  const asset = db.prepare(`
+    SELECT
+      id, type, name, category, brand, model, serial_number,
+      location, status, editor, version, license_count
+    FROM assets
+    WHERE id = ?
+  `).get(req.params.id)
+
+  if (!asset) return res.status(404).json({ error: 'Asset non trouvé' })
+  res.json(asset)
+})
+
 // ==================== DÉMARRAGE ====================
 
 const PORT = process.env.PORT || 3001
@@ -574,14 +599,12 @@ app.listen(PORT, async () => {
   console.log(`Serveur backend démarré sur http://localhost:${PORT}`)
   await testEmailConnection()
 
-  // Log la version au démarrage
   try {
     logStartup(db, logAction)
   } catch (err) {
     console.error('Erreur log startup :', err)
   }
 
-  // Démarrer le cron SLA
   try {
     startSlaCron(db, logAction)
   } catch (err) {

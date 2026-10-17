@@ -5,6 +5,7 @@ import { api } from '../api'
 import { useAuth } from '../context/AuthContext'
 import SlaPanel from '../components/SlaPanel'
 import KbSuggestions from '../components/KbSuggestions'
+import IncidentClassification from '../components/IncidentClassification'
 
 export default function TicketDetail() {
   const { id } = useParams()
@@ -287,6 +288,9 @@ export default function TicketDetail() {
 
         {/* SLA */}
         <SlaPanel ticket={ticket} />
+	
+	{/* Classification incidents */}
+	<IncidentClassification ticket={ticket} onUpdate={() => window.location.reload()} isAdmin={isAdmin} />
 
         {/* Actions statut */}
         <div className="p-6 border-b border-slate-200">

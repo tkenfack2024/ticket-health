@@ -263,6 +263,11 @@ adminGetAssets: (params = {}) => {
   }),
   adminUnreviewLog: (id) => request(`/api/admin/logs/${id}/unreview`, { method: 'POST' }),
   adminGetReviewStats: () => request('/api/admin/logs/review-stats'),
+  // Incidents DORA / BAIT
+  getDoraCriteria: () => request('/api/incidents/criteria'),
+  getMajorIncidents: () => request('/api/incidents/major'),
+  getIncidentStats: () => request('/api/incidents/stats'),
+  getIncidentNotification: (id) => request(`/api/incidents/${id}/notification`),
 
 
 }
