@@ -35,3 +35,5 @@ backend/test-sla.mjs
 backend/check-db.mjs
 backend/check-kb.mjs
 backend/payload.json
+backend/*.Backup
+backend/*.backup
