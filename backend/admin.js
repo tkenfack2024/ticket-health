@@ -9,6 +9,21 @@ export function createAdminRouter(db, logAction) {
   // Toutes les routes admin nécessitent auth + rôle admin
   router.use(authRequired, adminOnly)
 
+  // Migration : colonnes de revue des logs
+  const logColumns = db.prepare('PRAGMA table_info(logs)').all().map(c => c.name)
+  if (!logColumns.includes('reviewed')) {
+    db.exec('ALTER TABLE logs ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0')
+    console.log('🔧 Migration : colonne reviewed ajoutée à logs')
+  }
+  if (!logColumns.includes('reviewed_by')) {
+    db.exec('ALTER TABLE logs ADD COLUMN reviewed_by TEXT')
+    console.log('🔧 Migration : colonne reviewed_by ajoutée à logs')
+  }
+  if (!logColumns.includes('reviewed_at')) {
+    db.exec('ALTER TABLE logs ADD COLUMN reviewed_at TEXT')
+    console.log('🔧 Migration : colonne reviewed_at ajoutée à logs')
+  }
+
   // ---- GET /api/admin/users ----
   // Liste tous les utilisateurs
   router.get('/users', (req, res) => {
@@ -399,8 +414,8 @@ export function createAdminRouter(db, logAction) {
   })
   // ==================== LOGS ====================
 
-    router.get('/logs', (req, res) => {
-    const { entity, action, user_id, date_from, date_to, limit = 100, offset = 0 } = req.query
+      router.get('/logs', (req, res) => {
+    const { entity, action, user_id, date_from, date_to, reviewed, limit = 100, offset = 0 } = req.query
 
     let query = `
       SELECT l.*, u.email as user_email
@@ -421,15 +436,20 @@ export function createAdminRouter(db, logAction) {
       params.push(action)
       countParams.push(action)
     }
-    if (user_id) {
-      query += ' AND l.user_id = ?'
-      params.push(user_id)
-      countParams.push(user_id)
-    }
-    if (date_from) {
+     if (date_from) {
       query += ' AND l.created_at >= ?'
       params.push(date_from)
       countParams.push(date_from)
+    }
+    if (date_to) {
+      query += ' AND l.created_at <= ?'
+      params.push(date_to)
+      countParams.push(date_to)
+    }
+    if (reviewed === 'true') {
+      query += ' AND l.reviewed = 1'
+    } else if (reviewed === 'false') {
+      query += ' AND l.reviewed = 0'
     }
     if (date_to) {
       query += ' AND l.created_at <= ?'
@@ -444,6 +464,8 @@ export function createAdminRouter(db, logAction) {
     if (user_id) countQuery += ' AND l.user_id = ?'
     if (date_from) countQuery += ' AND l.created_at >= ?'
     if (date_to) countQuery += ' AND l.created_at <= ?'
+    if (reviewed === 'true') countQuery += ' AND l.reviewed = 1'
+    else if (reviewed === 'false') countQuery += ' AND l.reviewed = 0'
     const total = db.prepare(countQuery).get(...countParams).c
 
     query += ' ORDER BY l.id DESC LIMIT ? OFFSET ?'
@@ -862,6 +884,114 @@ export function createAdminRouter(db, logAction) {
       `Permission "${permissionCode}" révoquée à ${user.name}`)
 
     res.json({ success: true })
+  })
+
+  // ==================== REVUE DES LOGS ====================
+
+  // ---- POST /api/admin/logs/:id/review ----
+  // Marquer un log comme revu
+  router.post('/logs/:id/review', (req, res) => {
+    const targetId = parseInt(req.params.id)
+    const log = db.prepare('SELECT * FROM logs WHERE id = ?').get(targetId)
+    if (!log) return res.status(404).json({ error: 'Log non trouvé' })
+
+    db.prepare(`
+      UPDATE logs
+      SET reviewed = 1, reviewed_by = ?, reviewed_at = datetime('now', 'localtime')
+      WHERE id = ?
+    `).run(req.user.name, targetId)
+
+    logAction(req.user.id, req.user.name, 'review', 'log', targetId, `Log #${targetId} marqué comme revu`)
+
+    res.json({ success: true })
+  })
+
+  // ---- POST /api/admin/logs/bulk-review ----
+  // Marquer plusieurs logs comme revus
+  router.post('/logs/bulk-review', (req, res) => {
+    const { log_ids } = req.body
+    if (!Array.isArray(log_ids) || log_ids.length === 0) {
+      return res.status(400).json({ error: 'log_ids doit être un tableau non vide' })
+    }
+
+    const stmt = db.prepare(`
+      UPDATE logs
+      SET reviewed = 1, reviewed_by = ?, reviewed_at = datetime('now', 'localtime')
+      WHERE id = ? AND reviewed = 0
+    `)
+
+    let count = 0
+    for (const id of log_ids) {
+      const result = stmt.run(req.user.name, id)
+      count += result.changes
+    }
+
+    logAction(req.user.id, req.user.name, 'bulk-review', 'log', null,
+      `${count} log(s) marqué(s) comme revu(s)`)
+
+    res.json({ success: true, count })
+  })
+
+  // ---- POST /api/admin/logs/:id/unreview ----
+  // Retirer le statut "revu" (en cas d'erreur)
+  router.post('/logs/:id/unreview', (req, res) => {
+    const targetId = parseInt(req.params.id)
+    const log = db.prepare('SELECT * FROM logs WHERE id = ?').get(targetId)
+    if (!log) return res.status(404).json({ error: 'Log non trouvé' })
+
+    db.prepare(`
+      UPDATE logs SET reviewed = 0, reviewed_by = NULL, reviewed_at = NULL WHERE id = ?
+    `).run(targetId)
+
+    logAction(req.user.id, req.user.name, 'unreview', 'log', targetId, `Log #${targetId} démarqué`)
+
+    res.json({ success: true })
+  })
+
+  // ---- GET /api/admin/logs/review-stats ----
+  // Statistiques de revue
+  router.get('/logs/review-stats', (req, res) => {
+    const total = db.prepare('SELECT COUNT(*) as c FROM logs').get().c
+    const reviewed = db.prepare('SELECT COUNT(*) as c FROM logs WHERE reviewed = 1').get().c
+    const unreviewed = total - reviewed
+
+    // Logs non revus par ancienneté (les plus vieux en premier)
+    const oldestUnreviewed = db.prepare(`
+      SELECT id, created_at, action, entity, details, user_name
+      FROM logs
+      WHERE reviewed = 0
+      ORDER BY created_at ASC
+      LIMIT 5
+    `).all()
+
+    // Dernier audit
+    const lastReview = db.prepare(`
+      SELECT reviewed_by, reviewed_at
+      FROM logs
+      WHERE reviewed = 1
+      ORDER BY reviewed_at DESC
+      LIMIT 1
+    `).get()
+
+    // Logs non revus par jour (7 derniers jours)
+    const byDay = db.prepare(`
+      SELECT DATE(created_at) as day, COUNT(*) as count
+      FROM logs
+      WHERE reviewed = 0
+        AND created_at >= datetime('now', '-7 days', 'localtime')
+      GROUP BY DATE(created_at)
+      ORDER BY day DESC
+    `).all()
+
+    res.json({
+      total,
+      reviewed,
+      unreviewed,
+      review_rate: total > 0 ? Math.round((reviewed / total) * 100) : 0,
+      oldest_unreviewed: oldestUnreviewed,
+      last_review: lastReview,
+      unreviewed_by_day: byDay,
+    })
   })
 
   return router

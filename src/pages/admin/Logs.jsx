@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Filter, ChevronLeft, ChevronRight, ScrollText, Download, Calendar } from 'lucide-react'
+import { Filter, ChevronLeft, ChevronRight, ScrollText, Download, Calendar, CheckCircle, CheckSquare, Square, Eye, EyeOff, AlertTriangle } from 'lucide-react'
 import { api } from '../../api'
 
 const ACTION_COLORS = {
@@ -31,23 +31,36 @@ export default function AdminLogs() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [filterAction, setFilterAction] = useState('')
-  const [filterEntity, setFilterEntity] = useState('')
-  const [page, setPage] = useState(0)
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+const [filterAction, setFilterAction] = useState('')
+const [filterEntity, setFilterEntity] = useState('')
+const [dateFrom, setDateFrom] = useState('')
+const [dateTo, setDateTo] = useState('')
+const [filterReviewed, setFilterReviewed] = useState('')
+const [page, setPage] = useState(0)
+
+const [stats, setStats] = useState(null)
+const [selectedLogs, setSelectedLogs] = useState(new Set())
+const [bulkLoading, setBulkLoading] = useState(false)
 
   const load = async () => {
     try {
       setLoading(true)
-const data = await api.adminGetLogs({
-  action: filterAction || undefined,
-  entity: filterEntity || undefined,
-  date_from: dateFrom || undefined,
-  date_to: dateTo || undefined,
-  limit: PAGE_SIZE,
-  offset: page * PAGE_SIZE,
-})
+const [data, statsData] = await Promise.all([
+  api.adminGetLogs({
+    action: filterAction || undefined,
+    entity: filterEntity || undefined,
+    date_from: dateFrom || undefined,
+    date_to: dateTo || undefined,
+    reviewed: filterReviewed || undefined,
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  }),
+  api.adminGetReviewStats(),
+])
+setLogs(data.logs)
+setTotal(data.total)
+setStats(statsData)
+setSelectedLogs(new Set()) // Reset sélection
       setLogs(data.logs)
       setTotal(data.total)
       setError(null)
@@ -58,18 +71,112 @@ const data = await api.adminGetLogs({
     }
   }
 
-  useEffect(() => {
+const handleSelectLog = (id) => {
+  const newSelected = new Set(selectedLogs)
+  if (newSelected.has(id)) newSelected.delete(id)
+  else newSelected.add(id)
+  setSelectedLogs(newSelected)
+}
+
+const handleSelectAll = () => {
+  if (selectedLogs.size === logs.length) setSelectedLogs(new Set())
+  else setSelectedLogs(new Set(logs.map(l => l.id)))
+}
+
+const handleBulkReview = async () => {
+  if (selectedLogs.size === 0) return
+  setBulkLoading(true)
+  try {
+    await api.adminBulkReviewLogs(Array.from(selectedLogs))
+    await load()
+  } catch (err) {
+    alert(err.message)
+  } finally {
+    setBulkLoading(false)
+  }
+}
+
+const handleSingleReview = async (id) => {
+  try {
+    await api.adminReviewLog(id)
+    await load()
+  } catch (err) {
+    alert(err.message)
+  }
+}
+
+const handleUnreview = async (id) => {
+  try {
+    await api.adminUnreviewLog(id)
+    await load()
+  } catch (err) {
+    alert(err.message)
+  }
+}
+
+useEffect(() => {
   load()
-}, [filterAction, filterEntity, page, dateFrom, dateTo])
+}, [filterAction, filterEntity, page, dateFrom, dateTo, filterReviewed])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
-  return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-slate-800">Journal d'activité</h2>
-        <p className="text-slate-500 text-sm">{total} action(s) enregistrée(s)</p>
+return (
+  <div>
+    <div className="mb-6">
+      <h2 className="text-xl font-bold text-slate-800">Journal d'activité</h2>
+      <p className="text-slate-500 text-sm">{total} action(s) enregistrée(s)</p>
+    </div>
+
+    {/* Statistiques de revue */}
+    {stats && (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">Taux de revue</p>
+              <p className={`text-2xl font-bold mt-1 ${
+                stats.review_rate >= 80 ? 'text-green-700' :
+                stats.review_rate >= 50 ? 'text-amber-700' :
+                'text-red-700'
+              }`}>{stats.review_rate}%</p>
+              <p className="text-xs text-slate-500 mt-0.5">{stats.reviewed} / {stats.total} revus</p>
+            </div>
+            <div className={`p-3 rounded-lg ${
+              stats.review_rate >= 80 ? 'bg-green-100 text-green-600' :
+              stats.review_rate >= 50 ? 'bg-amber-100 text-amber-600' :
+              'bg-red-100 text-red-600'
+            }`}>
+              <CheckCircle size={20} />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">À revoir</p>
+              <p className="text-2xl font-bold text-amber-700 mt-1">{stats.unreviewed}</p>
+              <p className="text-xs text-slate-500 mt-0.5">logs non revus</p>
+            </div>
+            <div className="p-3 rounded-lg bg-amber-100 text-amber-600">
+              <AlertTriangle size={20} />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+          <p className="text-xs text-slate-500 uppercase tracking-wide">Dernier audit</p>
+          {stats.last_review ? (
+            <>
+              <p className="text-sm font-bold text-slate-800 mt-1">{stats.last_review.reviewed_by}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{stats.last_review.reviewed_at}</p>
+            </>
+          ) : (
+            <p className="text-sm text-slate-400 mt-1 italic">Aucun audit effectué</p>
+          )}
+        </div>
       </div>
+    )}
 
 {/* Filtres */}
 <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
@@ -94,6 +201,16 @@ const data = await api.adminGetLogs({
         <option key={e} value={e}>{ENTITY_LABELS[e] || e}</option>
       ))}
     </select>
+
+<select
+  value={filterReviewed}
+  onChange={(e) => { setFilterReviewed(e.target.value); setPage(0) }}
+  className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+>
+  <option value="">Tous les logs</option>
+  <option value="false">Non revus</option>
+  <option value="true">Revus</option>
+</select>
   </div>
 
   {/* Ligne 2 : Dates + Raccourcis + Export */}
@@ -236,6 +353,34 @@ const data = await api.adminGetLogs({
         </div>
       )}
 
+{selectedLogs.size > 0 && (
+  <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+    <p className="text-sm text-blue-900 font-medium">
+      {selectedLogs.size} log(s) sélectionné(s)
+    </p>
+    <div className="flex gap-2">
+      <button
+        onClick={() => setSelectedLogs(new Set())}
+        className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5"
+      >
+        Annuler
+      </button>
+      <button
+        onClick={handleBulkReview}
+        disabled={bulkLoading}
+        className="flex items-center gap-2 bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
+      >
+        {bulkLoading ? (
+          <span className="animate-spin">⏳</span>
+        ) : (
+          <CheckSquare size={14} />
+        )}
+        Marquer comme revus
+      </button>
+    </div>
+  </div>
+)}
+
       {loading ? (
         <div className="text-slate-500 text-sm">Chargement...</div>
       ) : logs.length === 0 ? (
@@ -246,10 +391,23 @@ const data = await api.adminGetLogs({
       ) : (
         <>
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Date</th>
+           <table className="w-full">
+  <thead className="bg-slate-50 border-b border-slate-200">
+    <tr>
+      <th className="text-center px-2 py-3 w-10">
+        <button
+          onClick={handleSelectAll}
+          className="text-slate-400 hover:text-slate-700"
+          title={selectedLogs.size === logs.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+        >
+          {selectedLogs.size === logs.length && logs.length > 0 ? (
+            <CheckSquare size={16} />
+          ) : (
+            <Square size={16} />
+          )}
+        </button>
+      </th>
+      <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Date</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Utilisateur</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Action</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Entité</th>
@@ -257,11 +415,19 @@ const data = await api.adminGetLogs({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-2.5 text-xs text-slate-500 font-mono whitespace-nowrap">
-                      {log.created_at}
-                    </td>
+               {logs.map((log) => (
+  <tr key={log.id} className={`hover:bg-slate-50 ${log.reviewed ? 'bg-green-50/30' : ''}`}>
+    <td className="text-center px-2 py-2.5">
+      <button
+        onClick={() => handleSelectLog(log.id)}
+        className="text-slate-400 hover:text-slate-700"
+      >
+        {selectedLogs.has(log.id) ? <CheckSquare size={16} /> : <Square size={16} />}
+      </button>
+    </td>
+    <td className="px-4 py-2.5 text-xs text-slate-500 font-mono whitespace-nowrap">
+      {log.created_at}
+    </td>
                     <td className="px-4 py-2.5 text-sm text-slate-700">
                       {log.user_name || <span className="text-slate-400 italic">Système</span>}
                     </td>
@@ -276,11 +442,39 @@ const data = await api.adminGetLogs({
                       {ENTITY_LABELS[log.entity] || log.entity}
                       {log.entity_id && <span className="text-slate-400 ml-1">#{log.entity_id}</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-sm text-slate-600">
-                      {log.details || '-'}
-                    </td>
-                  </tr>
-                ))}
+    <td className="px-4 py-2.5 text-sm text-slate-600">
+      {log.details || '-'}
+    </td>
+    <td className="px-4 py-2.5 text-right">
+      {log.reviewed ? (
+        <div className="flex items-center justify-end gap-2">
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700"
+            title={`Revu par ${log.reviewed_by} le ${log.reviewed_at}`}
+          >
+            <CheckCircle size={11} />
+            Revu
+          </span>
+          <button
+            onClick={() => handleUnreview(log.id)}
+            className="p-1 text-slate-400 hover:text-amber-600"
+            title="Démarquer"
+          >
+            <EyeOff size={14} />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => handleSingleReview(log.id)}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700"
+        >
+          <Eye size={11} />
+          Marquer revu
+        </button>
+      )}
+    </td>
+  </tr>
+))}
               </tbody>
             </table>
           </div>

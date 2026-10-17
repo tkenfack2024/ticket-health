@@ -255,5 +255,14 @@ adminGetAssets: (params = {}) => {
     return `http://localhost:3001/api/gdpr/export?token=${token}`
   },
 
+  // Revue des logs
+  adminReviewLog: (id) => request(`/api/admin/logs/${id}/review`, { method: 'POST' }),
+  adminBulkReviewLogs: (ids) => request('/api/admin/logs/bulk-review', {
+    method: 'POST',
+    body: JSON.stringify({ log_ids: ids }),
+  }),
+  adminUnreviewLog: (id) => request(`/api/admin/logs/${id}/unreview`, { method: 'POST' }),
+  adminGetReviewStats: () => request('/api/admin/logs/review-stats'),
+
 
 }
