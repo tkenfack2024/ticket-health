@@ -12,6 +12,7 @@ import { startSlaCron } from './sla-cron.js'
 import { initKnowledgeTables, createKnowledgeRouter } from './knowledge.js'
 import { initGdprTables, createGdprRouter } from './gdpr.js'
 import { createIncidentsRouter } from './incidents.js'
+import { encrypt, decrypt, getEncryptionStatus } from './encryption.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -311,6 +312,11 @@ app.get('/', (req, res) => {
   res.json({ message: 'API HealthTicket fonctionne !' })
 })
 
+// ---- GET /api/security/encryption-status ----
+app.get('/api/security/encryption-status', authRequired, (req, res) => {
+  res.json(getEncryptionStatus())
+})
+
 // ---- GET /api/tickets ----
 app.get('/api/tickets', authRequired, (req, res) => {
   const { archived, assigned_to } = req.query
@@ -345,9 +351,10 @@ app.get('/api/tickets', authRequired, (req, res) => {
   const tickets = db.prepare(query).all(...params)
 
   // Enrichir avec l'état SLA
-  for (const t of tickets) {
-    t.sla_status = computeSlaStatus(t)
-  }
+for (const t of tickets) {
+  t.sla_status = computeSlaStatus(t)
+  t.description = decrypt(t.description)
+}
 
   res.json(tickets)
 })
@@ -380,8 +387,11 @@ app.get('/api/tickets/:id', authRequired, (req, res) => {
     if (!canAccess) return res.status(403).json({ error: 'Accès refusé à ce ticket' })
   }
 
-  ticket.sla_status = computeSlaStatus(ticket)
-  res.json(ticket)
+// Déchiffrer la description
+ticket.description = decrypt(ticket.description)
+
+ticket.sla_status = computeSlaStatus(ticket)
+res.json(ticket)
 })
 
 // ---- POST /api/tickets ----
@@ -396,10 +406,13 @@ app.post('/api/tickets', authRequired, (req, res) => {
     if (!asset) return res.status(400).json({ error: 'Asset introuvable' })
   }
 
-  const result = db.prepare(`
-    INSERT INTO tickets (title, category, priority, description, created_by, creator, asset_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(title, category, priority, description || '', req.user.id, req.user.name, asset_id || null)
+// Chiffrer la description
+const encryptedDescription = description ? encrypt(description) : null
+
+const result = db.prepare(`
+  INSERT INTO tickets (title, category, priority, description, created_by, creator, asset_id)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
+`).run(title, category, priority, encryptedDescription, req.user.id, req.user.name, asset_id || null)
 
   applySlaToTicket(db, result.lastInsertRowid, priority)
 

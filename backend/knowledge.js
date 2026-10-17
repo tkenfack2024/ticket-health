@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
+import { encrypt, decrypt } from './encryption.js'
 
 // ==================== INITIALISATION DES TABLES ====================
 
@@ -267,12 +268,14 @@ export function createKnowledgeRouter(db, logAction) {
       LIMIT 10
     `).all(req.params.id)
 
-    res.json({
-      ...article,
-      linked_tickets: linkedTickets,
-      user_vote: userVote ? userVote.helpful : null,
-      history,
-    })
+article.workaround = decrypt(article.workaround)
+
+res.json({
+  ...article,
+  linked_tickets: linkedTickets,
+  user_vote: userVote ? userVote.helpful : null,
+  history,
+})
   })
 
   // ---- POST /api/kb/articles ----
@@ -302,24 +305,26 @@ export function createKnowledgeRouter(db, logAction) {
       }
     }
 
-    const result = db.prepare(`
-      INSERT INTO kb_articles (
-        title, content, summary, category_id, tags, status,
-        is_known_error, workaround, author_id, author_name
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      title.trim(),
-      content.trim(),
-      summary?.trim() || null,
-      category_id || null,
-      tags?.trim() || null,
-      finalStatus,
-      is_known_error ? 1 : 0,
-      workaround?.trim() || null,
-      req.user.id,
-      req.user.name
-    )
+const encryptedWorkaround = workaround ? encrypt(workaround.trim()) : null
+
+const result = db.prepare(`
+  INSERT INTO kb_articles (
+    title, content, summary, category_id, tags, status,
+    is_known_error, workaround, author_id, author_name
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`).run(
+  title.trim(),
+  content.trim(),
+  summary?.trim() || null,
+  category_id || null,
+  tags?.trim() || null,
+  finalStatus,
+  is_known_error ? 1 : 0,
+  encryptedWorkaround,
+  req.user.id,
+  req.user.name
+)
 
     const article = db.prepare('SELECT * FROM kb_articles WHERE id = ?').get(result.lastInsertRowid)
 
