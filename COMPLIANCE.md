@@ -190,29 +190,59 @@ Ce document a pour objectif de :
 
 
 
+### 3.7 Chiffrement et protection des données
+
+| Mesure | Implémentation | Réglementation couverte |
+|--------|----------------|-------------------------|
+| **Chiffrement au repos** | AES-256-GCM (crypto natif Node.js) | HIPAA, NIST SC-13, GDPR |
+| **Champs chiffrés** | descriptions tickets, workarounds KEDB | HIPAA (ePHI) |
+| **Clé de chiffrement** | Variable d'environnement (32 bytes) | NIST SC-12 |
+| **Format de chiffrement** | [version:1][iv:12][authTag:16][ciphertext] | AES-GCM authentifié |
+| **Rétrocompatibilité** | Détection auto (préfixe "ENC:") | — |
+
+### 3.8 Registre des traitements GDPR
+
+| Mesure | Implémentation | Réglementation couverte |
+|--------|----------------|-------------------------|
+| **Registre des traitements** | Table `gdpr_processing` (5 traitements seed) | GDPR Article 30 |
+| **Interface admin** | Page `/admin` → onglet RGPD | GDPR |
+| **Export CSV** | Bouton "Exporter CSV" | GDPR |
+| **CRUD complet** | Créer, modifier, supprimer | GDPR |
+
+### 3.9 Classification des incidents (DORA/BAIT)
+
+| Mesure | Implémentation | Réglementation couverte |
+|--------|----------------|-------------------------|
+| **Types d'incident** | Standard / Sécurité / Majeur | BAIT (Störung vs IT-Sicherheitsvorfall) |
+| **Critères DORA** | 7 critères configurables | DORA Article 18 |
+| **Classification auto** | ≥ 2 critères = incident majeur | DORA |
+| **Fiche de notification** | API `/api/incidents/:id/notification` | DORA (délai 4h) |
+
+### 3.10 Revue des logs (NIST AU-6)
+
+| Mesure | Implémentation | Réglementation couverte |
+|--------|----------------|-------------------------|
+| **Revue formelle** | Marquage "revu" par utilisateur | NIST AU-6 |
+| **Traçabilité** | `reviewed_by`, `reviewed_at` | NIST AU-9 |
+| **Statistiques** | Taux de revue, dernier audit | NIST AU-6 |
+| **Action en masse** | Sélection multiple + marquage | NIST AU-6 |
+
 \---
-
-
 
 \## 4. Mesures partielles ou manquantes
 
 
 
-\### 4.1 Points critiques à implémenter
+### 4.1 Points critiques — État actuel
 
+| Mesure | Statut | Date | Détails |
+|--------|--------|------|---------|
+| **Registre des traitements GDPR** | ✅ **Implémenté** | 17/10/2026 | Article 30, 5 traitements pré-remplis, export CSV |
+| **Revue formelle des logs** | ✅ **Implémenté** | 17/10/2026 | NIST AU-6, marquage individuel + masse, statistiques |
+| **Classification incidents DORA/BAIT** | ✅ **Implémenté** | 17/10/2026 | 7 critères DORA, classification auto si ≥2 critères |
+| **Chiffrement champs sensibles** | ✅ **Implémenté** | 18/10/2026 | AES-256-GCM, descriptions tickets + workarounds KEDB |
 
-
-| Mesure | Statut | Priorité | Point plan |
-
-|--------|--------|----------|------------|
-
-| \*\*Registre des traitements GDPR\*\* | ❌ Absent | 🔴 Haute | Point 2 |
-
-| \*\*Revue formelle des logs\*\* | ❌ Absent | 🔴 Haute | Point 3 |
-
-| \*\*Classification incidents DORA/BAIT\*\* | ⚠️ Partiel | 🟡 Moyenne | Point 4 |
-
-| \*\*Chiffrement champs sensibles\*\* | ❌ Absent | 🔴 Haute | Point 5 |
+**Tous les points critiques sont maintenant couverts.** ✅
 
 
 
