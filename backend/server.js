@@ -14,6 +14,7 @@ import { initGdprTables, createGdprRouter } from './gdpr.js'
 import { createIncidentsRouter } from './incidents.js'
 import { encrypt, decrypt, getEncryptionStatus } from './encryption.js'
 import { initCmdbTables, createCmdbRouter } from './cmdb.js'
+import { createPortalRouter } from './portal.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -310,6 +311,7 @@ app.use('/api/kb', createKnowledgeRouter(db, logAction))
 app.use('/api/gdpr', createGdprRouter(db, logAction))
 app.use('/api/incidents', createIncidentsRouter(db, logAction))
 app.use('/api/cmdb', createCmdbRouter(db, logAction))
+app.use('/api/portal', createPortalRouter(db, logAction))
 
 // ==================== ROUTES : TICKETS ====================
 

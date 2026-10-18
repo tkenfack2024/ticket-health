@@ -304,5 +304,36 @@ adminGetAssets: (params = {}) => {
     method: 'POST',
   }),
 
+  // Portail Self-Service
+  portalGetMyTickets: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/portal/my-tickets${qs ? '?' + qs : ''}`)
+  },
+  portalGetMyTicket: (id) => request(`/api/portal/my-tickets/${id}`),
+  portalAddComment: (ticketId, text) => request(`/api/portal/my-tickets/${ticketId}/comment`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  }),
+  portalConfirmResolved: (ticketId) => request(`/api/portal/my-tickets/${ticketId}/confirm-resolved`, {
+    method: 'POST',
+  }),
+  portalGetKb: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/portal/kb${qs ? '?' + qs : ''}`)
+  },
+  portalGetKbArticle: (id) => request(`/api/portal/kb/${id}`),
+  portalVoteKb: (id, helpful) => request(`/api/portal/kb/${id}/vote`, {
+    method: 'POST',
+    body: JSON.stringify({ helpful }),
+  }),
+
 
 }
