@@ -335,5 +335,37 @@ adminGetAssets: (params = {}) => {
     body: JSON.stringify({ helpful }),
   }),
 
+  // Problèmes (ITIL)
+  problemsGetAll: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/problems${qs ? '?' + qs : ''}`)
+  },
+  problemsGet: (id) => request(`/api/problems/${id}`),
+  problemsCreate: (data) => request('/api/problems', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  problemsUpdate: (id, data) => request(`/api/problems/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  problemsDelete: (id) => request(`/api/problems/${id}`, {
+    method: 'DELETE',
+  }),
+  problemsLinkTicket: (problemId, ticketId) => request(`/api/problems/${problemId}/link-ticket`, {
+    method: 'POST',
+    body: JSON.stringify({ ticket_id: ticketId }),
+  }),
+  problemsUnlinkTicket: (problemId, ticketId) => request(`/api/problems/${problemId}/unlink-ticket/${ticketId}`, {
+    method: 'DELETE',
+  }),
+  problemsCreateKb: (id) => request(`/api/problems/${id}/create-kb`, {
+    method: 'POST',
+  }),
+  problemsGetStats: () => request('/api/problems/stats'),
 
 }

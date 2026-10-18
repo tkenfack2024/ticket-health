@@ -15,6 +15,7 @@ import { createIncidentsRouter } from './incidents.js'
 import { encrypt, decrypt, getEncryptionStatus } from './encryption.js'
 import { initCmdbTables, createCmdbRouter } from './cmdb.js'
 import { createPortalRouter } from './portal.js'
+import { initProblemTables, createProblemRouter } from './problems.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -249,6 +250,9 @@ initGdprTables(db)
 // Initialiser les tables CMDB
 initCmdbTables(db)
 
+// Initialiser les tables Problèmes
+initProblemTables(db)
+
 // ==================== SEED : Permissions ====================
 
 const permsCount = db.prepare('SELECT COUNT(*) as c FROM permissions').get().c
@@ -312,6 +316,7 @@ app.use('/api/gdpr', createGdprRouter(db, logAction))
 app.use('/api/incidents', createIncidentsRouter(db, logAction))
 app.use('/api/cmdb', createCmdbRouter(db, logAction))
 app.use('/api/portal', createPortalRouter(db, logAction))
+app.use('/api/problems', createProblemRouter(db, logAction))
 
 // ==================== ROUTES : TICKETS ====================
 

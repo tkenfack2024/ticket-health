@@ -14,6 +14,7 @@ import CmdbDetail from './pages/admin/CmdbDetail'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Admin from './pages/Admin'
+import ProblemDetail from './pages/admin/ProblemDetail'
 import MyTickets from './pages/portal/MyTickets'
 import MyTicketDetail from './pages/portal/MyTicketDetail'
 import PortalKb from './pages/portal/Kb'
@@ -60,6 +61,15 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+<Route
+  path="admin/problems/:id"
+  element={
+    <ProtectedRoute adminOnly>
+      <ProblemDetail />
+    </ProtectedRoute>
+  }
+/>
         </Route>
 
         {/* Routes PORTAIL (avec PortalLayout, séparé du Layout admin) */}
