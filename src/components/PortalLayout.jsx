@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
-  Home, PlusCircle, BookOpen, LogOut, Activity, User
+  Home, PlusCircle, BookOpen, LogOut, Activity, Shield
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -19,6 +19,9 @@ export default function PortalLayout() {
     logout()
     navigate('/login')
   }
+
+  // Admin OU technicien peuvent revenir au dashboard
+  const canReturnToAdmin = user?.role === 'admin' || user?.role === 'technicien'
 
   return (
     <div className="flex min-h-screen">
@@ -47,6 +50,15 @@ export default function PortalLayout() {
             <BookOpen size={20} />
             Base de connaissances
           </NavLink>
+
+          {canReturnToAdmin && (
+            <div className="pt-2 mt-2 border-t border-slate-200">
+              <NavLink to="/" className={linkClass}>
+                <Shield size={20} />
+                Retour au dashboard
+              </NavLink>
+            </div>
+          )}
         </nav>
 
         <div className="border-t border-slate-200 p-4">

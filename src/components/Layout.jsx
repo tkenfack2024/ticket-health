@@ -10,6 +10,7 @@ import {
   UserPlus,
   Shield,
   BookOpen,
+  ExternalLink,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
@@ -49,27 +50,39 @@ export default function Layout() {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          <NavLink to="/" end className={linkClass}>
-            <LayoutDashboard size={20} />
-            Tableau de bord
-          </NavLink>
-          <NavLink to="/tickets" end className={linkClass}>
-            <Ticket size={20} />
-            Tous les tickets
-          </NavLink>
-		<NavLink to="/knowledge" className={linkClass}>
-  			<BookOpen size={20} />
-  			Base de connaissances
-		</NavLink>
+<nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+  <NavLink to="/" end className={linkClass}>
+    <LayoutDashboard size={20} />
+    Tableau de bord
+  </NavLink>
+  <NavLink to="/tickets" end className={linkClass}>
+    <Ticket size={20} />
+    Tous les tickets
+  </NavLink>
+  <NavLink to="/tickets/new" className={linkClass}>
+    <PlusCircle size={20} />
+    Nouveau ticket
+  </NavLink>
+  <NavLink to="/knowledge" className={linkClass}>
+    <BookOpen size={20} />
+    Base de connaissances
+  </NavLink>
 
-          {isAdmin && (
-            <NavLink to="/admin" className={linkClass}>
-              <Shield size={20} />
-              Administration
-            </NavLink>
-          )}
-        </nav>
+  {isAdmin && (
+    <NavLink to="/admin" className={linkClass}>
+      <Shield size={20} />
+      Administration
+    </NavLink>
+  )}
+
+  {/* Lien vers le portail utilisateur */}
+  <div className="pt-2 mt-2 border-t border-slate-200">
+    <NavLink to="/portal" className={linkClass}>
+      <ExternalLink size={20} />
+      Portail utilisateur
+    </NavLink>
+  </div>
+</nav>
 
         <div className="border-t border-slate-200 p-4">
           {isAuthenticated ? (

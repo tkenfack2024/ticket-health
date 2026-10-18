@@ -25,9 +25,13 @@ export default function Login() {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.login({ email, password })
-      login(res.user, res.token)
-      navigate(redirectTo, { replace: true })
+const res = await api.login({ email, password })
+login(res.user, res.token)
+// Redirection selon le rôle
+const targetPath = res.user.role === 'admin' || res.user.role === 'technicien'
+  ? (redirectTo && redirectTo !== '/' ? redirectTo : '/')
+  : '/portal'
+navigate(targetPath, { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -56,9 +60,13 @@ export default function Login() {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.verifyOtp(email, otpCode)
-      login(res.user, res.token)
-      navigate(redirectTo, { replace: true })
+const res = await api.verifyOtp(email, otpCode)
+login(res.user, res.token)
+// Redirection selon le rôle
+const targetPath = res.user.role === 'admin' || res.user.role === 'technicien'
+  ? (redirectTo && redirectTo !== '/' ? redirectTo : '/')
+  : '/portal'
+navigate(targetPath, { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {

@@ -39,8 +39,9 @@ export default function Register() {
         phone: form.phone,
         password: form.password,
       })
-      login(res.user, res.token)
-      navigate('/', { replace: true })
+     login(res.user, res.token)
+	// Les nouveaux inscrits sont des "user" → portail
+	navigate('/portal', { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {
