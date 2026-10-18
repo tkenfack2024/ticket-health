@@ -7,6 +7,7 @@ import TicketList from './pages/TicketList'
 import CreateTicket from './pages/CreateTicket'
 import TicketDetail from './pages/TicketDetail'
 import Knowledge from './pages/Knowledge'
+import CmdbDetail from './pages/admin/CmdbDetail'
 import KnowledgeArticle from './pages/KnowledgeArticle'
 import KnowledgeEdit from './pages/KnowledgeEdit'
 import Login from './pages/Login'
@@ -46,6 +47,15 @@ function App() {
    	    </ProtectedRoute>
   	}
       />
+
+<Route
+  path="cmdb/:id"
+  element={
+    <ProtectedRoute adminOnly>
+      <CmdbDetail />
+    </ProtectedRoute>
+  }
+/>
         </Route>
       </Routes>
     </AuthProvider>

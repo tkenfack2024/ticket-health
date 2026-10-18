@@ -13,6 +13,7 @@ import { initKnowledgeTables, createKnowledgeRouter } from './knowledge.js'
 import { initGdprTables, createGdprRouter } from './gdpr.js'
 import { createIncidentsRouter } from './incidents.js'
 import { encrypt, decrypt, getEncryptionStatus } from './encryption.js'
+import { initCmdbTables, createCmdbRouter } from './cmdb.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -244,6 +245,9 @@ initKnowledgeTables(db)
 // Initialiser le registre GDPR
 initGdprTables(db)
 
+// Initialiser les tables CMDB
+initCmdbTables(db)
+
 // ==================== SEED : Permissions ====================
 
 const permsCount = db.prepare('SELECT COUNT(*) as c FROM permissions').get().c
@@ -305,6 +309,7 @@ app.use('/api/sla', createSlaRouter(db, logAction))
 app.use('/api/kb', createKnowledgeRouter(db, logAction))
 app.use('/api/gdpr', createGdprRouter(db, logAction))
 app.use('/api/incidents', createIncidentsRouter(db, logAction))
+app.use('/api/cmdb', createCmdbRouter(db, logAction))
 
 // ==================== ROUTES : TICKETS ====================
 

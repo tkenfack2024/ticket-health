@@ -269,5 +269,27 @@ adminGetAssets: (params = {}) => {
   getIncidentStats: () => request('/api/incidents/stats'),
   getIncidentNotification: (id) => request(`/api/incidents/${id}/notification`),
 
+  // CMDB
+  cmdbGetCis: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/cmdb/cis${qs ? '?' + qs : ''}`)
+  },
+  cmdbGetCi: (id) => request(`/api/cmdb/cis/${id}`),
+  cmdbCreateCi: (data) => request('/api/cmdb/cis', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  cmdbUpdateCi: (id, data) => request(`/api/cmdb/cis/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  cmdbDeleteCi: (id) => request(`/api/cmdb/cis/${id}`, {
+    method: 'DELETE',
+  }),
+
 
 }
