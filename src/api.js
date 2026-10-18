@@ -291,5 +291,18 @@ adminGetAssets: (params = {}) => {
     method: 'DELETE',
   }),
 
+  // Liaison ticket ↔ CI
+  getTicketCis: (ticketId) => request(`/api/cmdb/tickets/${ticketId}/cis`),
+  linkTicketCi: (ticketId, ciId, isPrimary = false) => request(`/api/cmdb/tickets/${ticketId}/cis`, {
+    method: 'POST',
+    body: JSON.stringify({ ci_id: ciId, is_primary: isPrimary }),
+  }),
+  unlinkTicketCi: (ticketId, ciId) => request(`/api/cmdb/tickets/${ticketId}/cis/${ciId}`, {
+    method: 'DELETE',
+  }),
+  setPrimaryCi: (ticketId, ciId) => request(`/api/cmdb/tickets/${ticketId}/cis/${ciId}/primary`, {
+    method: 'POST',
+  }),
+
 
 }

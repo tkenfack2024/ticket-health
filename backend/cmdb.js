@@ -357,6 +357,104 @@ export function createCmdbRouter(db, logAction) {
     res.json({ success: true })
   })
 
+  // ==================== LIAISON TICKET ↔ CI ====================
+
+  // ---- GET /api/cmdb/tickets/:ticketId/cis ----
+  // Récupérer les CIs liés à un ticket
+  router.get('/tickets/:ticketId/cis', (req, res) => {
+    const ticketId = parseInt(req.params.ticketId)
+
+    const cis = db.prepare(`
+      SELECT
+        c.id, c.name, c.code, c.type, c.criticality, c.status,
+        tc.is_primary, tc.linked_at
+      FROM ticket_cis tc
+      JOIN configuration_items c ON tc.ci_id = c.id
+      WHERE tc.ticket_id = ?
+      ORDER BY tc.is_primary DESC, tc.linked_at DESC
+    `).all(ticketId)
+
+    res.json(cis)
+  })
+
+  // ---- POST /api/cmdb/tickets/:ticketId/cis ----
+  // Lier un CI à un ticket
+  router.post('/tickets/:ticketId/cis', (req, res) => {
+    const ticketId = parseInt(req.params.ticketId)
+    const { ci_id, is_primary } = req.body
+
+    if (!ci_id) {
+      return res.status(400).json({ error: 'ci_id obligatoire' })
+    }
+
+    // Vérifier que le ticket existe
+    const ticket = db.prepare('SELECT id, title FROM tickets WHERE id = ?').get(ticketId)
+    if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
+
+    // Vérifier que le CI existe
+    const ci = db.prepare('SELECT id, name FROM configuration_items WHERE id = ?').get(ci_id)
+    if (!ci) return res.status(404).json({ error: 'CI non trouvé' })
+
+    // Vérifier si déjà lié
+    const existing = db.prepare('SELECT id FROM ticket_cis WHERE ticket_id = ? AND ci_id = ?').get(ticketId, ci_id)
+    if (existing) {
+      return res.status(409).json({ error: 'Ce CI est déjà lié à ce ticket' })
+    }
+
+    // Si is_primary, retirer le statut des autres
+    if (is_primary) {
+      db.prepare('UPDATE ticket_cis SET is_primary = 0 WHERE ticket_id = ?').run(ticketId)
+    }
+
+    const result = db.prepare(`
+      INSERT INTO ticket_cis (ticket_id, ci_id, is_primary, linked_by_id)
+      VALUES (?, ?, ?, ?)
+    `).run(ticketId, ci_id, is_primary ? 1 : 0, req.user.id)
+
+    logAction(req.user.id, req.user.name, 'link', 'ticket', ticketId,
+      `CI "${ci.name}" lié au ticket`)
+
+    res.status(201).json({ success: true, id: result.lastInsertRowid })
+  })
+
+  // ---- DELETE /api/cmdb/tickets/:ticketId/cis/:ciId ----
+  // Délier un CI d'un ticket
+  router.delete('/tickets/:ticketId/cis/:ciId', (req, res) => {
+    const ticketId = parseInt(req.params.ticketId)
+    const ciId = parseInt(req.params.ciId)
+
+    const result = db.prepare('DELETE FROM ticket_cis WHERE ticket_id = ? AND ci_id = ?').run(ticketId, ciId)
+
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Lien non trouvé' })
+    }
+
+    logAction(req.user.id, req.user.name, 'unlink', 'ticket', ticketId, `CI #${ciId} délié`)
+
+    res.json({ success: true })
+  })
+
+  // ---- POST /api/cmdb/tickets/:ticketId/cis/:ciId/primary ----
+  // Définir un CI comme principal
+  router.post('/tickets/:ticketId/cis/:ciId/primary', (req, res) => {
+    const ticketId = parseInt(req.params.ticketId)
+    const ciId = parseInt(req.params.ciId)
+
+    // Vérifier que le lien existe
+    const existing = db.prepare('SELECT id FROM ticket_cis WHERE ticket_id = ? AND ci_id = ?').get(ticketId, ciId)
+    if (!existing) {
+      return res.status(404).json({ error: 'Lien non trouvé' })
+    }
+
+    // Retirer le statut primary de tous
+    db.prepare('UPDATE ticket_cis SET is_primary = 0 WHERE ticket_id = ?').run(ticketId)
+
+    // Définir ce CI comme primary
+    db.prepare('UPDATE ticket_cis SET is_primary = 1 WHERE ticket_id = ? AND ci_id = ?').run(ticketId, ciId)
+
+    res.json({ success: true })
+  })
+
 
   return router
 }
@@ -402,3 +500,5 @@ function getImpactAnalysis(db, ciId) {
 
   return impacted
 }
+
+
