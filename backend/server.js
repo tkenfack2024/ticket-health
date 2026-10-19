@@ -604,6 +604,51 @@ app.get('/api/assets', authRequired, (req, res) => {
   res.json(assets)
 })
 
+// ---- GET /api/assets/full ----
+// Liste enrichie des assets avec infos CI associés
+app.get('/api/assets/full', authRequired, (req, res) => {
+  const { type, search } = req.query
+
+  let query = `
+    SELECT
+      a.id, a.type, a.name, a.category, a.brand, a.model,
+      a.serial_number, a.location, a.status,
+      a.editor, a.version, a.license_count,
+      a.assigned_to,
+      u.name as assigned_to_name,
+      c.id as ci_id,
+      c.name as ci_name,
+      c.code as ci_code,
+      c.type as ci_type,
+      c.criticality as ci_criticality,
+      c.status as ci_status
+    FROM assets a
+    LEFT JOIN users u ON a.assigned_to = u.id
+    LEFT JOIN configuration_items c ON (
+      c.name = a.name OR c.code = a.serial_number
+    )
+    WHERE 1=1
+  `
+  const params = []
+
+  if (type && ['hardware', 'software'].includes(type)) {
+    query += ' AND a.type = ?'
+    params.push(type)
+  }
+
+  if (search) {
+    query += ' AND (a.name LIKE ? OR a.serial_number LIKE ? OR a.brand LIKE ? OR a.model LIKE ? OR a.editor LIKE ?)'
+    const s = `%${search}%`
+    params.push(s, s, s, s, s)
+  }
+
+  query += ' ORDER BY a.type ASC, a.name ASC LIMIT 200'
+
+  const assets = db.prepare(query).all(...params)
+  res.json(assets)
+})
+
+// ---- GET /api/assets/:id ----
 app.get('/api/assets/:id', authRequired, (req, res) => {
   const asset = db.prepare(`
     SELECT
@@ -616,6 +661,7 @@ app.get('/api/assets/:id', authRequired, (req, res) => {
   if (!asset) return res.status(404).json({ error: 'Asset non trouvé' })
   res.json(asset)
 })
+
 
 // ==================== DÉMARRAGE ====================
 

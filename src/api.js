@@ -368,4 +368,13 @@ adminGetAssets: (params = {}) => {
   }),
   problemsGetStats: () => request('/api/problems/stats'),
 
+  getAssetsFull: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/assets/full${qs ? '?' + qs : ''}`)
+  },
+
 }
