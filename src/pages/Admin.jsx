@@ -30,11 +30,12 @@ export default function Admin() {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-800">Administration</h1>
-        <p className="text-slate-500">Gérez les utilisateurs, modules, assets et plus</p>
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Administration</h1>
+        <p className="text-slate-500 dark:text-slate-400">Gérez les utilisateurs, modules, assets et plus</p>
       </div>
 
-      <div className="border-b border-slate-200 mb-6">
+      {/* Onglets */}
+      <div className="border-b border-slate-200 dark:border-slate-700 mb-6">
         <div className="flex gap-1 overflow-x-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon
@@ -45,8 +46,8 @@ export default function Admin() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
                   isActive
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-slate-600 hover:text-slate-800'
+                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
                 <Icon size={16} />
@@ -57,16 +58,19 @@ export default function Admin() {
         </div>
       </div>
 
-      {activeTab === 'users' && <AdminUsers />}
-      {activeTab === 'permissions' && <AdminPermissions />}
-      {activeTab === 'modules' && <AdminModules />}
-      {activeTab === 'assets' && <AdminAssets />}
-      {activeTab === 'sla' && <AdminSla />}
-      {activeTab === 'logs' && <AdminLogs />}
-      {activeTab === 'archive' && <AdminArchive />}
-      {activeTab === 'gdpr' && <AdminGdpr />}
-      {activeTab === 'cmdb' && <AdminCmdb />}
-      {activeTab === 'problems' && <AdminProblems />}
+      {/* Contenu */}
+      <div className="text-slate-800 dark:text-slate-100">
+        {activeTab === 'users' && <AdminUsers />}
+        {activeTab === 'permissions' && <AdminPermissions />}
+        {activeTab === 'modules' && <AdminModules />}
+        {activeTab === 'assets' && <AdminAssets />}
+        {activeTab === 'cmdb' && <AdminCmdb />}
+        {activeTab === 'problems' && <AdminProblems />}
+        {activeTab === 'sla' && <AdminSla />}
+        {activeTab === 'logs' && <AdminLogs />}
+        {activeTab === 'archive' && <AdminArchive />}
+        {activeTab === 'gdpr' && <AdminGdpr />}
+      </div>
     </div>
   )
 }
