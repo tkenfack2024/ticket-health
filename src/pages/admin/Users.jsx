@@ -4,9 +4,9 @@ import { api } from '../../api'
 import { useAuth } from '../../context/AuthContext'
 
 const ROLE_LABELS = {
-  admin: { label: 'Admin', color: 'bg-red-100 text-red-700' },
-  technicien: { label: 'Technicien', color: 'bg-amber-100 text-amber-700' },
-  user: { label: 'Utilisateur', color: 'bg-blue-100 text-blue-700' },
+  admin: { label: 'Admin', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  technicien: { label: 'Technicien', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  user: { label: 'Utilisateur', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
 }
 
 export default function AdminUsers() {
@@ -31,19 +31,14 @@ export default function AdminUsers() {
     }
   }
 
-  useEffect(() => {
-    loadUsers()
-  }, [])
+  useEffect(() => { loadUsers() }, [])
 
   const handleToggleActive = async (u) => {
     if (u.id === currentUser.id) return
     if (!confirm(`${u.active ? 'Désactiver' : 'Activer'} ${u.name} ?`)) return
     try {
-      if (u.active) {
-        await api.adminDeactivateUser(u.id)
-      } else {
-        await api.adminUpdateUser(u.id, { active: true })
-      }
+      if (u.active) await api.adminDeactivateUser(u.id)
+      else await api.adminUpdateUser(u.id, { active: true })
       loadUsers()
     } catch (err) {
       alert(err.message)
@@ -60,15 +55,14 @@ export default function AdminUsers() {
     }
   }
 
-  if (loading) return <div className="p-6 text-slate-500">Chargement...</div>
+  if (loading) return <div className="p-6 text-slate-500 dark:text-slate-400">Chargement...</div>
 
   return (
     <div>
-      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Utilisateurs</h2>
-          <p className="text-slate-500 text-sm">{users.length} utilisateur(s)</p>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Utilisateurs</h2>
+          <p className="text-slate-500 dark:text-slate-400 text-sm">{users.length} utilisateur(s)</p>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
@@ -80,42 +74,39 @@ export default function AdminUsers() {
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">
+        <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-2 rounded-lg text-sm">
           {error}
         </div>
       )}
 
-      {/* Tableau */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
         <table className="w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-slate-50 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600">
             <tr>
-              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Nom</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Email</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Rôle</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Statut</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 uppercase">Actions</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Nom</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Email</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Rôle</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Statut</th>
+              <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
             {users.map((u) => {
               const isSelf = u.id === currentUser.id
               return (
-                <tr key={u.id} className="hover:bg-slate-50">
+                <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                        <span className="text-blue-600 font-semibold text-xs">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center flex-shrink-0">
+                        <span className="text-blue-600 dark:text-blue-400 font-semibold text-xs">
                           {u.name.charAt(0).toUpperCase()}
                         </span>
                       </div>
-                      <span className="font-medium text-slate-800 text-sm">{u.name}</span>
-                      {isSelf && (
-                        <span className="text-xs text-slate-400">(vous)</span>
-                      )}
+                      <span className="font-medium text-slate-800 dark:text-slate-100 text-sm">{u.name}</span>
+                      {isSelf && <span className="text-xs text-slate-400 dark:text-slate-500">(vous)</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-600">{u.email}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{u.email}</td>
                   <td className="px-4 py-3">
                     {isSelf ? (
                       <span className={`px-2 py-1 rounded text-xs font-medium ${ROLE_LABELS[u.role].color}`}>
@@ -125,7 +116,7 @@ export default function AdminUsers() {
                       <select
                         value={u.role}
                         onChange={(e) => handleRoleChange(u, e.target.value)}
-                        className="text-xs px-2 py-1 border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="text-xs px-2 py-1 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                       >
                         <option value="user">Utilisateur</option>
                         <option value="technicien">Technicien</option>
@@ -135,7 +126,9 @@ export default function AdminUsers() {
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      u.active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                      u.active
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
                     }`}>
                       {u.active ? 'Actif' : 'Désactivé'}
                     </span>
@@ -144,26 +137,25 @@ export default function AdminUsers() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => setEditingUser(u)}
+                        className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
                         title="Modifier"
-                        className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"
                       >
                         <Pencil size={16} />
                       </button>
                       <button
                         onClick={() => setResettingUser(u)}
+                        className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded"
                         title="Réinitialiser mot de passe"
-                        className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded"
                       >
                         <KeyRound size={16} />
                       </button>
                       {!isSelf && (
                         <button
                           onClick={() => handleToggleActive(u)}
-                          title={u.active ? 'Désactiver' : 'Activer'}
                           className={`p-1.5 rounded ${
                             u.active
-                              ? 'text-slate-500 hover:text-red-600 hover:bg-red-50'
-                              : 'text-slate-500 hover:text-green-600 hover:bg-green-50'
+                              ? 'text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                              : 'text-slate-500 dark:text-slate-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20'
                           }`}
                         >
                           {u.active ? <UserX size={16} /> : <UserCheck size={16} />}
@@ -178,36 +170,21 @@ export default function AdminUsers() {
         </table>
       </div>
 
-      {/* Modals */}
       {showCreateModal && (
-        <CreateUserModal
-          onClose={() => setShowCreateModal(false)}
-          onSuccess={() => { setShowCreateModal(false); loadUsers() }}
-        />
+        <CreateUserModal onClose={() => setShowCreateModal(false)} onSuccess={() => { setShowCreateModal(false); loadUsers() }} />
       )}
       {editingUser && (
-        <EditUserModal
-          user={editingUser}
-          onClose={() => setEditingUser(null)}
-          onSuccess={() => { setEditingUser(null); loadUsers() }}
-        />
+        <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onSuccess={() => { setEditingUser(null); loadUsers() }} />
       )}
       {resettingUser && (
-        <ResetPasswordModal
-          user={resettingUser}
-          onClose={() => setResettingUser(null)}
-          onSuccess={() => setResettingUser(null)}
-        />
+        <ResetPasswordModal user={resettingUser} onClose={() => setResettingUser(null)} onSuccess={() => setResettingUser(null)} />
       )}
     </div>
   )
 }
 
-// ============ MODAL : Créer ============
 function CreateUserModal({ onClose, onSuccess }) {
-  const [form, setForm] = useState({
-    name: '', email: '', phone: '', password: '', role: 'user',
-  })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', role: 'user' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -226,32 +203,22 @@ function CreateUserModal({ onClose, onSuccess }) {
 
   return (
     <Modal onClose={onClose} title="Nouvel utilisateur">
-      {error && <div className="mb-4 bg-red-50 text-red-700 px-3 py-2 rounded text-sm">{error}</div>}
+      {error && <div className="mb-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 px-3 py-2 rounded text-sm">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Nom complet *">
-          <input type="text" required value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="input" />
+          <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input-dark" />
         </Field>
         <Field label="Email *">
-          <input type="email" required value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            className="input" />
+          <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input-dark" />
         </Field>
         <Field label="Téléphone">
-          <input type="tel" value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            className="input" />
+          <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input-dark" />
         </Field>
         <Field label="Mot de passe *">
-          <input type="text" required value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            placeholder="6 caractères minimum" className="input" />
+          <input type="text" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input-dark" />
         </Field>
         <Field label="Rôle *">
-          <select value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
-            className="input">
+          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="input-dark">
             <option value="user">Utilisateur</option>
             <option value="technicien">Technicien</option>
             <option value="admin">Admin</option>
@@ -263,7 +230,6 @@ function CreateUserModal({ onClose, onSuccess }) {
   )
 }
 
-// ============ MODAL : Éditer ============
 function EditUserModal({ user, onClose, onSuccess }) {
   const [form, setForm] = useState({ name: user.name, phone: user.phone || '' })
   const [loading, setLoading] = useState(false)
@@ -284,17 +250,13 @@ function EditUserModal({ user, onClose, onSuccess }) {
 
   return (
     <Modal onClose={onClose} title={`Modifier ${user.name}`}>
-      {error && <div className="mb-4 bg-red-50 text-red-700 px-3 py-2 rounded text-sm">{error}</div>}
+      {error && <div className="mb-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 px-3 py-2 rounded text-sm">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Nom complet">
-          <input type="text" value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="input" />
+          <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input-dark" />
         </Field>
         <Field label="Téléphone">
-          <input type="tel" value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            className="input" />
+          <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input-dark" />
         </Field>
         <ModalButtons onCancel={onClose} loading={loading} submitLabel="Enregistrer" />
       </form>
@@ -302,7 +264,6 @@ function EditUserModal({ user, onClose, onSuccess }) {
   )
 }
 
-// ============ MODAL : Reset password ============
 function ResetPasswordModal({ user, onClose, onSuccess }) {
   const [newPassword, setNewPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -314,7 +275,7 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
     setError(null)
     try {
       await api.adminResetPassword(user.id, newPassword)
-      alert('Mot de passe réinitialisé. Prévenez l\'utilisateur.')
+      alert('Mot de passe réinitialisé.')
       onSuccess()
     } catch (err) {
       setError(err.message)
@@ -323,31 +284,25 @@ function ResetPasswordModal({ user, onClose, onSuccess }) {
   }
 
   return (
-    <Modal onClose={onClose} title={`Réinitialiser le mot de passe de ${user.name}`}>
-      {error && <div className="mb-4 bg-red-50 text-red-700 px-3 py-2 rounded text-sm">{error}</div>}
+    <Modal onClose={onClose} title={`Reset mot de passe de ${user.name}`}>
+      {error && <div className="mb-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 px-3 py-2 rounded text-sm">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Nouveau mot de passe">
-          <input type="text" required value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="6 caractères minimum" className="input" />
+          <input type="text" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="input-dark" />
         </Field>
-        <p className="text-xs text-slate-500">
-          L'utilisateur devra utiliser ce nouveau mot de passe à sa prochaine connexion.
-        </p>
         <ModalButtons onCancel={onClose} loading={loading} submitLabel="Réinitialiser" />
       </form>
     </Modal>
   )
 }
 
-// ============ Helpers UI ============
 function Modal({ children, onClose, title }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl max-w-md w-full p-6">
+      <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <h3 className="font-bold text-slate-800 dark:text-slate-100">{title}</h3>
+          <button onClick={onClose} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300">
             <X size={20} />
           </button>
         </div>
@@ -360,7 +315,7 @@ function Modal({ children, onClose, title }) {
 function Field({ label, children }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{label}</label>
       {children}
     </div>
   )
@@ -369,13 +324,11 @@ function Field({ label, children }) {
 function ModalButtons({ onCancel, loading, submitLabel }) {
   return (
     <div className="flex gap-2 pt-2">
-      <button type="submit" disabled={loading}
-        className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50">
+      <button type="submit" disabled={loading} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50">
         {loading && <Loader2 size={16} className="animate-spin" />}
         {submitLabel}
       </button>
-      <button type="button" onClick={onCancel} disabled={loading}
-        className="flex-1 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-sm disabled:opacity-50">
+      <button type="button" onClick={onCancel} disabled={loading} className="flex-1 py-2 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 text-sm disabled:opacity-50">
         Annuler
       </button>
     </div>

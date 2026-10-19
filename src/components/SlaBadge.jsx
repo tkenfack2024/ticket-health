@@ -1,6 +1,5 @@
-import { Clock, AlertTriangle, CheckCircle, Pause, MinusCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Pause, MinusCircle } from 'lucide-react'
 
-// Convertit des minutes en texte "2h 30min" ou "45min"
 function formatMinutes(minutes) {
   if (minutes === null || minutes === undefined) return ''
   const abs = Math.abs(minutes)
@@ -13,7 +12,7 @@ function formatMinutes(minutes) {
 export default function SlaBadge({ ticket, compact = false }) {
   if (!ticket.sla_resolution_deadline) {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-slate-50 text-slate-400">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-slate-50 dark:bg-slate-700 text-slate-400 dark:text-slate-500">
         <MinusCircle size={12} />
         {!compact && 'Pas de SLA'}
       </span>
@@ -27,27 +26,27 @@ export default function SlaBadge({ ticket, compact = false }) {
 
   const config = {
     ok: {
-      bg: 'bg-green-100 text-green-700',
+      bg: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
       icon: CheckCircle,
       label: diffMinutes > 0 ? `Dans ${formatMinutes(diffMinutes)}` : 'À temps',
     },
-    menacé: {
-      bg: 'bg-amber-100 text-amber-700',
+    'menacé': {
+      bg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
       icon: AlertTriangle,
       label: diffMinutes > 0 ? `${formatMinutes(diffMinutes)} restant` : 'Bientôt dépassé',
     },
-    dépassé: {
-      bg: 'bg-red-100 text-red-700',
+    'dépassé': {
+      bg: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
       icon: AlertTriangle,
       label: `Dépassé de ${formatMinutes(Math.abs(diffMinutes))}`,
     },
     'en pause': {
-      bg: 'bg-slate-100 text-slate-600',
+      bg: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
       icon: Pause,
       label: 'En pause',
     },
-    respecté: {
-      bg: 'bg-green-100 text-green-700',
+    'respecté': {
+      bg: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
       icon: CheckCircle,
       label: 'SLA respecté',
     },
@@ -57,10 +56,7 @@ export default function SlaBadge({ ticket, compact = false }) {
   const Icon = c.icon
 
   return (
-    <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${c.bg}`}
-      title={`SLA : ${status}`}
-    >
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${c.bg}`} title={`SLA : ${status}`}>
       <Icon size={12} />
       {!compact && c.label}
     </span>

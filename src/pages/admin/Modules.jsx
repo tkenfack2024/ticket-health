@@ -13,12 +13,12 @@ const COLORS = [
 ]
 
 const colorClasses = {
-  blue: 'bg-blue-100 text-blue-700',
-  red: 'bg-red-100 text-red-700',
-  amber: 'bg-amber-100 text-amber-700',
-  green: 'bg-green-100 text-green-700',
-  purple: 'bg-purple-100 text-purple-700',
-  slate: 'bg-slate-100 text-slate-600',
+  blue: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  red: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  amber: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  green: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  purple: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  slate: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
 }
 
 export default function AdminModules() {
@@ -57,23 +57,21 @@ export default function AdminModules() {
     if (!confirm(`Supprimer le module "${m.name}" ?\n\nSi des tickets y sont liés, il sera seulement désactivé.`)) return
     try {
       const res = await api.adminDeleteModule(m.id)
-      if (res.deactivated) {
-        alert(`Module désactivé (${res.ticketCount} ticket(s) liés).`)
-      }
+      if (res.deactivated) alert(`Module désactivé (${res.ticketCount} ticket(s) liés).`)
       load()
     } catch (err) {
       alert(err.message)
     }
   }
 
-  if (loading) return <div className="p-6 text-slate-500">Chargement...</div>
+  if (loading) return <div className="p-6 text-slate-500 dark:text-slate-400">Chargement...</div>
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">Modules</h2>
-          <p className="text-slate-500 text-sm">Catégories de tickets dynamiques</p>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Modules</h2>
+          <p className="text-slate-500 dark:text-slate-400 text-sm">Catégories de tickets dynamiques</p>
         </div>
         <button
           onClick={() => { setEditing(null); setShowModal(true) }}
@@ -85,60 +83,46 @@ export default function AdminModules() {
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm">
+        <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-2 rounded-lg text-sm">
           {error}
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {modules.map((m) => (
-          <div key={m.id} className={`bg-white rounded-xl border p-4 transition-colors ${
-            m.active ? 'border-slate-200' : 'border-slate-100 opacity-60'
+          <div key={m.id} className={`bg-white dark:bg-slate-800 rounded-xl border p-4 transition-colors ${
+            m.active ? 'border-slate-200 dark:border-slate-700' : 'border-slate-100 dark:border-slate-700 opacity-60'
           }`}>
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  colorClasses[m.color] || colorClasses.slate
-                }`}>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colorClasses[m.color] || colorClasses.slate}`}>
                   <span className="font-bold text-sm">{m.name.charAt(0).toUpperCase()}</span>
                 </div>
                 <div>
-                  <h3 className="font-semibold text-slate-800">{m.name}</h3>
+                  <h3 className="font-semibold text-slate-800 dark:text-slate-100">{m.name}</h3>
                   <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
-                    m.active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'
+                    m.active
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                      : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
                   }`}>
                     {m.active ? 'Actif' : 'Désactivé'}
                   </span>
                 </div>
               </div>
             </div>
-            <p className="text-sm text-slate-500 mb-3 line-clamp-2 min-h-[2.5rem]">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-3 line-clamp-2 min-h-[2.5rem]">
               {m.description || 'Aucune description'}
             </p>
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <span className="text-xs text-slate-500">
-                {m.ticket_count || 0} ticket(s)
-              </span>
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-700">
+              <span className="text-xs text-slate-500 dark:text-slate-400">{m.ticket_count || 0} ticket(s)</span>
               <div className="flex gap-1">
-                <button
-                  onClick={() => { setEditing(m); setShowModal(true) }}
-                  title="Modifier"
-                  className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"
-                >
+                <button onClick={() => { setEditing(m); setShowModal(true) }} className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded">
                   <Pencil size={15} />
                 </button>
-                <button
-                  onClick={() => handleToggle(m)}
-                  title={m.active ? 'Désactiver' : 'Activer'}
-                  className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded"
-                >
+                <button onClick={() => handleToggle(m)} className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded">
                   <Power size={15} />
                 </button>
-                <button
-                  onClick={() => handleDelete(m)}
-                  title="Supprimer"
-                  className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded"
-                >
+                <button onClick={() => handleDelete(m)} className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded">
                   <Trash2 size={15} />
                 </button>
               </div>
@@ -158,7 +142,6 @@ export default function AdminModules() {
   )
 }
 
-// ============ MODAL ============
 function ModuleModal({ module, onClose, onSuccess }) {
   const isEdit = !!module
   const [form, setForm] = useState({
@@ -175,11 +158,8 @@ function ModuleModal({ module, onClose, onSuccess }) {
     setLoading(true)
     setError(null)
     try {
-      if (isEdit) {
-        await api.adminUpdateModule(module.id, form)
-      } else {
-        await api.adminCreateModule(form)
-      }
+      if (isEdit) await api.adminUpdateModule(module.id, form)
+      else await api.adminCreateModule(form)
       onSuccess()
     } catch (err) {
       setError(err.message)
@@ -189,85 +169,48 @@ function ModuleModal({ module, onClose, onSuccess }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl max-w-md w-full p-6">
+      <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="font-bold text-slate-800">
+          <h3 className="font-bold text-slate-800 dark:text-slate-100">
             {isEdit ? `Modifier "${module.name}"` : 'Nouveau module'}
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <button onClick={onClose} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300">
             <X size={20} />
           </button>
         </div>
 
-        {error && <div className="mb-4 bg-red-50 text-red-700 px-3 py-2 rounded text-sm">{error}</div>}
+        {error && <div className="mb-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 px-3 py-2 rounded text-sm">{error}</div>}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Nom *</label>
-            <input
-              type="text"
-              required
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="Ex: Réseau"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            />
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nom *</label>
+            <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input-dark" />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-            <textarea
-              rows={2}
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="À quoi sert ce module ?"
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
-            />
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Description</label>
+            <textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input-dark resize-none" />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Couleur</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Couleur</label>
             <div className="flex gap-2">
               {COLORS.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setForm({ ...form, color: c.id })}
-                  title={c.label}
-                  className={`w-8 h-8 rounded-full ${c.class} ${
-                    form.color === c.id ? 'ring-2 ring-offset-2 ring-slate-800' : ''
-                  }`}
-                />
+                <button key={c.id} type="button" onClick={() => setForm({ ...form, color: c.id })} title={c.label}
+                  className={`w-8 h-8 rounded-full ${c.class} ${form.color === c.id ? 'ring-2 ring-offset-2 ring-slate-800 dark:ring-slate-200 dark:ring-offset-slate-800' : ''}`} />
               ))}
             </div>
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Icône (nom Lucide)</label>
-            <select
-              value={form.icon}
-              onChange={(e) => setForm({ ...form, icon: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            >
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Icône</label>
+            <select value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })} className="input-dark">
               {ICONS.map((i) => <option key={i} value={i}>{i}</option>)}
             </select>
           </div>
-
           <div className="flex gap-2 pt-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
-            >
+            <button type="submit" disabled={loading} className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50">
               {loading && <Loader2 size={16} className="animate-spin" />}
               {isEdit ? 'Enregistrer' : 'Créer'}
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="flex-1 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-sm disabled:opacity-50"
-            >
+            <button type="button" onClick={onClose} disabled={loading} className="flex-1 py-2 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 text-sm disabled:opacity-50">
               Annuler
             </button>
           </div>
