@@ -17,6 +17,7 @@ import Register from './pages/Register'
 import ProfileNotifications from './pages/ProfileNotifications'
 import Admin from './pages/Admin'
 import ProblemDetail from './pages/admin/ProblemDetail'
+import ChangeDetail from './pages/admin/ChangeDetail'
 import MyTickets from './pages/portal/MyTickets'
 import MyTicketDetail from './pages/portal/MyTicketDetail'
 import PortalKb from './pages/portal/Kb'
@@ -24,6 +25,7 @@ import PortalKbArticle from './pages/portal/KbArticle'
 import PortalCatalog from './pages/portal/Catalog'
 import CatalogService from './pages/portal/CatalogService'
 import MyRequests from './pages/portal/MyRequests'
+
 
 function App() {
   return (
@@ -91,6 +93,16 @@ function App() {
                 </ProtectedRoute>
               }
             />
+	
+	   <Route
+  		path="admin/changes/:id"
+  		element={
+    		<ProtectedRoute>
+      		<ChangeDetail />
+    		</ProtectedRoute>
+  	    }
+	/>
+
           </Route>
 
           {/* Routes PORTAIL */}

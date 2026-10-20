@@ -418,4 +418,41 @@ adminGetAssets: (params = {}) => {
     method: 'DELETE',
   }),
 
+  // Changements (RFC)
+  changesGetAll: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/changes${qs ? '?' + qs : ''}`)
+  },
+  changesGet: (id) => request(`/api/changes/${id}`),
+  changesCreate: (data) => request('/api/changes', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  changesUpdate: (id, data) => request(`/api/changes/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  changesSubmit: (id) => request(`/api/changes/${id}/submit`, { method: 'POST' }),
+  changesApprove: (id) => request(`/api/changes/${id}/approve`, { method: 'POST' }),
+  changesReject: (id, reason) => request(`/api/changes/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }),
+  changesStart: (id) => request(`/api/changes/${id}/start`, { method: 'POST' }),
+  changesComplete: (id) => request(`/api/changes/${id}/complete`, { method: 'POST' }),
+  changesRollback: (id) => request(`/api/changes/${id}/rollback`, { method: 'POST' }),
+  changesClose: (id) => request(`/api/changes/${id}/close`, { method: 'POST' }),
+  changesLinkTicket: (id, ticketId) => request(`/api/changes/${id}/link-ticket`, {
+    method: 'POST',
+    body: JSON.stringify({ ticket_id: ticketId }),
+  }),
+  changesUnlinkTicket: (id, ticketId) => request(`/api/changes/${id}/unlink-ticket/${ticketId}`, {
+    method: 'DELETE',
+  }),
+  changesDelete: (id) => request(`/api/changes/${id}`, { method: 'DELETE' }),
+
 }
