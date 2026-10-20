@@ -559,5 +559,70 @@ export function createChangeRouter(db, logAction) {
     res.json({ success: true })
   })
 
+  // ---- POST /api/changes/:id/analyze-impact ----
+  // Analyser l'impact des CIs sélectionnés
+  router.post('/:id/analyze-impact', (req, res) => {
+    const { ci_ids } = req.body
+
+    if (!Array.isArray(ci_ids) || ci_ids.length === 0) {
+      return res.status(400).json({ error: 'ci_ids obligatoire (tableau)' })
+    }
+
+    // Pour chaque CI, calculer l'impact récursif
+    const impacts = []
+
+    function findImpacted(currentId, level, visited) {
+      if (level > 3) return
+
+      const dependents = db.prepare(`
+        SELECT
+          r.parent_id, r.relation_type,
+          c.name, c.code, c.type, c.criticality
+        FROM ci_relations r
+        JOIN configuration_items c ON r.parent_id = c.id
+        WHERE r.child_id = ?
+      `).all(currentId)
+
+      for (const dep of dependents) {
+        if (!visited.has(dep.parent_id)) {
+          visited.add(dep.parent_id)
+          impacts.push({
+            ci_id: dep.parent_id,
+            name: dep.name,
+            code: dep.code,
+            type: dep.type,
+            criticality: dep.criticality,
+            relation_type: dep.relation_type,
+            level,
+            source_ci_id: currentId,
+          })
+          findImpacted(dep.parent_id, level + 1, visited)
+        }
+      }
+    }
+
+    // Pour chaque CI source
+    const sourceCis = []
+    for (const ciId of ci_ids) {
+      const ci = db.prepare('SELECT * FROM configuration_items WHERE id = ?').get(ciId)
+      if (ci) {
+        sourceCis.push(ci)
+        const visited = new Set([ciId])
+        findImpacted(ciId, 1, visited)
+      }
+    }
+
+    // Compter les CIs critiques impactés
+    const criticalImpacts = impacts.filter(i => i.criticality === 'Critique')
+
+    res.json({
+      source_cis: sourceCis,
+      impacted_cis: impacts,
+      total_impacted: impacts.length,
+      critical_impacts: criticalImpacts.length,
+      has_critical_impact: criticalImpacts.length > 0,
+    })
+  })
+
   return router
 }

@@ -455,4 +455,9 @@ adminGetAssets: (params = {}) => {
   }),
   changesDelete: (id) => request(`/api/changes/${id}`, { method: 'DELETE' }),
 
+  changesAnalyzeImpact: (id, ciIds) => request(`/api/changes/${id}/analyze-impact`, {
+    method: 'POST',
+    body: JSON.stringify({ ci_ids: ciIds }),
+  }),
+
 }
