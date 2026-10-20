@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield, FileText, Network, Bug } from 'lucide-react'
+import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield, FileText, Network, Bug, ShoppingBag } from 'lucide-react'
 import AdminUsers from './admin/Users'
 import AdminModules from './admin/Modules'
 import AdminAssets from './admin/Assets'
@@ -10,6 +10,7 @@ import AdminPermissions from './admin/Permissions'
 import AdminGdpr from './admin/Gdpr'
 import AdminCmdb from './admin/Cmdb'
 import AdminProblems from './admin/Problems'
+import AdminCatalog from './admin/Catalog'
 
 const TABS = [
   { id: 'users', label: 'Utilisateurs', icon: Users },
@@ -18,6 +19,7 @@ const TABS = [
   { id: 'assets', label: 'Assets', icon: Package },
   { id: 'cmdb', label: 'CMDB', icon: Network },
   { id: 'problems', label: 'Problèmes', icon: Bug },
+  { id: 'catalog', label: 'Catalogue', icon: ShoppingBag },
   { id: 'sla', label: 'SLA', icon: Clock },
   { id: 'logs', label: 'Logs', icon: ScrollText },
   { id: 'archive', label: 'Archive', icon: Archive },
@@ -70,6 +72,7 @@ export default function Admin() {
           {activeTab === 'assets' && <AdminAssets />}
           {activeTab === 'cmdb' && <AdminCmdb />}
           {activeTab === 'problems' && <AdminProblems />}
+	  {activeTab === 'catalog' && <AdminCatalog />}
           {activeTab === 'sla' && <AdminSla />}
           {activeTab === 'logs' && <AdminLogs />}
           {activeTab === 'archive' && <AdminArchive />}
