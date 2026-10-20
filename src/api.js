@@ -383,5 +383,39 @@ adminGetAssets: (params = {}) => {
     method: 'PATCH',
     body: JSON.stringify(data),
   }),
+  // Catalogue de services
+  catalogGetServices: () => request('/api/catalog/services'),
+  catalogGetService: (id) => request(`/api/catalog/services/${id}`),
+  catalogCreateRequest: (data) => request('/api/catalog/requests', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  catalogGetMyRequests: () => request('/api/catalog/my-requests'),
+  catalogGetRequest: (id) => request(`/api/catalog/requests/${id}`),
+  catalogAdminGetRequests: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/catalog/admin/requests${qs ? '?' + qs : ''}`)
+  },
+  catalogAdminApprove: (id) => request(`/api/catalog/admin/requests/${id}/approve`, { method: 'POST' }),
+  catalogAdminReject: (id, reason) => request(`/api/catalog/admin/requests/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }),
+  catalogAdminGetServices: () => request('/api/catalog/admin/services'),
+  catalogAdminCreateService: (data) => request('/api/catalog/admin/services', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  catalogAdminUpdateService: (id, data) => request(`/api/catalog/admin/services/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  catalogAdminDeleteService: (id) => request(`/api/catalog/admin/services/${id}`, {
+    method: 'DELETE',
+  }),
 
 }

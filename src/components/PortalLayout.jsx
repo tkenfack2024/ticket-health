@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
-  Home, PlusCircle, BookOpen, LogOut, Activity, Shield
+  Home, PlusCircle, BookOpen, LogOut, Activity, Shield, Package, FileText
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
@@ -38,18 +38,26 @@ export default function PortalLayout() {
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
-          <NavLink to="/portal" end className={linkClass}>
-            <Home size={20} />
-            Mes tickets
-          </NavLink>
-          <NavLink to="/tickets/new" className={linkClass}>
-            <PlusCircle size={20} />
-            Nouveau ticket
-          </NavLink>
-          <NavLink to="/portal/kb" className={linkClass}>
-            <BookOpen size={20} />
-            Base de connaissances
-          </NavLink>
+  <NavLink to="/portal" end className={linkClass}>
+    <Home size={20} />
+    Mes tickets
+  </NavLink>
+  <NavLink to="/portal/catalog" className={linkClass}>
+    <Package size={20} />
+    Catalogue de services
+  </NavLink>
+  <NavLink to="/portal/my-requests" className={linkClass}>
+    <FileText size={20} />
+    Mes demandes
+  </NavLink>
+  <NavLink to="/tickets/new" className={linkClass}>
+    <PlusCircle size={20} />
+    Nouveau ticket
+  </NavLink>
+  <NavLink to="/portal/kb" className={linkClass}>
+    <BookOpen size={20} />
+    Base de connaissances
+  </NavLink>
 
           {canReturnToAdmin && (
             <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">

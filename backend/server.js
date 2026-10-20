@@ -19,6 +19,7 @@ import {
   getPreferences,
   updatePreferences,
 } from './notifications.js'
+import { initCatalogTables, createCatalogRouter } from './catalog.js'
 import { encrypt, decrypt, getEncryptionStatus } from './encryption.js'
 import { initCmdbTables, createCmdbRouter } from './cmdb.js'
 import { createPortalRouter } from './portal.js'
@@ -339,8 +340,12 @@ app.use('/api/incidents', createIncidentsRouter(db, logAction))
 app.use('/api/cmdb', createCmdbRouter(db, logAction))
 app.use('/api/portal', createPortalRouter(db, logAction))
 app.use('/api/problems', createProblemRouter(db, logAction))
+app.use('/api/catalog', createCatalogRouter(db, logAction))
 
 // ==================== ROUTES : PRÉFÉRENCES NOTIFICATIONS ====================
+
+// Initialiser le catalogue
+initCatalogTables(db)
 
 app.get('/api/notifications/preferences', authRequired, (req, res) => {
   try {

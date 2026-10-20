@@ -21,6 +21,9 @@ import MyTickets from './pages/portal/MyTickets'
 import MyTicketDetail from './pages/portal/MyTicketDetail'
 import PortalKb from './pages/portal/Kb'
 import PortalKbArticle from './pages/portal/KbArticle'
+import PortalCatalog from './pages/portal/Catalog'
+import CatalogService from './pages/portal/CatalogService'
+import MyRequests from './pages/portal/MyRequests'
 
 function App() {
   return (
@@ -34,20 +37,36 @@ function App() {
           {/* Routes ADMIN (avec Layout) */}
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
+
+            {/* TICKETS — l'ordre est important ! */}
             <Route path="tickets" element={<TicketList />} />
+            <Route
+              path="tickets/new"
+              element={
+                <ProtectedRoute>
+                  <CreateTicket />
+                </ProtectedRoute>
+              }
+            />
             <Route path="tickets/:id" element={<TicketDetail />} />
+
+            {/* KNOWLEDGE */}
             <Route path="knowledge" element={<Knowledge />} />
             <Route path="knowledge/new" element={<KnowledgeEdit />} />
             <Route path="knowledge/:id/edit" element={<KnowledgeEdit />} />
             <Route path="knowledge/:id" element={<KnowledgeArticle />} />
+
+            {/* PROFIL */}
             <Route
-  		path="profile/notifications"
-  		element={
-    			<ProtectedRoute>
-      				<ProfileNotifications />
-    			</ProtectedRoute>
-  		   }
-		/>
+              path="profile/notifications"
+              element={
+                <ProtectedRoute>
+                  <ProfileNotifications />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* ADMIN */}
             <Route
               path="admin"
               element={
@@ -87,6 +106,9 @@ function App() {
             <Route path="tickets/:id" element={<MyTicketDetail />} />
             <Route path="kb" element={<PortalKb />} />
             <Route path="kb/:id" element={<PortalKbArticle />} />
+            <Route path="catalog" element={<PortalCatalog />} />
+            <Route path="catalog/:id" element={<CatalogService />} />
+            <Route path="my-requests" element={<MyRequests />} />
           </Route>
         </Routes>
       </AuthProvider>
