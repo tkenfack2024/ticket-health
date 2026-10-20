@@ -24,9 +24,9 @@ export default function PortalLayout() {
   const canReturnToAdmin = user?.role === 'admin' || user?.role === 'technicien'
 
   return (
-    <div className="flex min-h-screen">
-      {/* Sidebar simplifiée */}
-      <aside className="w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-colors">
+    <div className="flex h-screen overflow-hidden">
+  {/* Sidebar simplifiée - FIXE */}
+  <aside className="w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-colors sticky top-0 h-screen overflow-y-auto">
         <div className="p-6 border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <Activity className="w-8 h-8 text-blue-600" />
@@ -86,10 +86,10 @@ export default function PortalLayout() {
         </div>
       </aside>
 
-      {/* Contenu */}
-      <main className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-900 transition-colors">
-        <Outlet />
-      </main>
+      {/* Contenu - SCROLLABLE */}
+<main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900 transition-colors">
+  <Outlet />
+</main>
     </div>
   )
 }

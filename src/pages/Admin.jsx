@@ -28,48 +28,53 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState('users')
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Administration</h1>
-        <p className="text-slate-500 dark:text-slate-400">Gérez les utilisateurs, modules, assets et plus</p>
-      </div>
+    <div className="h-full flex flex-col">
+      {/* Header + Onglets - STICKY */}
+      <div className="flex-shrink-0 bg-slate-50 dark:bg-slate-900 px-8 pt-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Administration</h1>
+          <p className="text-slate-500 dark:text-slate-400">Gérez les utilisateurs, modules, assets et plus</p>
+        </div>
 
-      {/* Onglets */}
-      <div className="border-b border-slate-200 dark:border-slate-700 mb-6">
-        <div className="flex gap-1 overflow-x-auto">
-          {TABS.map((tab) => {
-            const Icon = tab.icon
-            const isActive = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
-                  isActive
-                    ? 'border-blue-600 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <Icon size={16} />
-                {tab.label}
-              </button>
-            )
-          })}
+        {/* Onglets */}
+        <div className="border-b border-slate-200 dark:border-slate-700">
+          <div className="flex gap-1 overflow-x-auto">
+            {TABS.map((tab) => {
+              const Icon = tab.icon
+              const isActive = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                    isActive
+                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                      : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Icon size={16} />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 
-      {/* Contenu */}
-      <div className="text-slate-800 dark:text-slate-100">
-        {activeTab === 'users' && <AdminUsers />}
-        {activeTab === 'permissions' && <AdminPermissions />}
-        {activeTab === 'modules' && <AdminModules />}
-        {activeTab === 'assets' && <AdminAssets />}
-        {activeTab === 'cmdb' && <AdminCmdb />}
-        {activeTab === 'problems' && <AdminProblems />}
-        {activeTab === 'sla' && <AdminSla />}
-        {activeTab === 'logs' && <AdminLogs />}
-        {activeTab === 'archive' && <AdminArchive />}
-        {activeTab === 'gdpr' && <AdminGdpr />}
+      {/* Contenu scrollable */}
+      <div className="flex-1 overflow-y-auto px-8 pb-8">
+        <div className="pt-6 text-slate-800 dark:text-slate-100">
+          {activeTab === 'users' && <AdminUsers />}
+          {activeTab === 'permissions' && <AdminPermissions />}
+          {activeTab === 'modules' && <AdminModules />}
+          {activeTab === 'assets' && <AdminAssets />}
+          {activeTab === 'cmdb' && <AdminCmdb />}
+          {activeTab === 'problems' && <AdminProblems />}
+          {activeTab === 'sla' && <AdminSla />}
+          {activeTab === 'logs' && <AdminLogs />}
+          {activeTab === 'archive' && <AdminArchive />}
+          {activeTab === 'gdpr' && <AdminGdpr />}
+        </div>
       </div>
     </div>
   )
