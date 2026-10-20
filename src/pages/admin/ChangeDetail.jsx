@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { api } from '../../api'
 import { useAuth } from '../../context/AuthContext'
+import { Plus, Link as LinkIcon } from 'lucide-react'
 
 const STATUS_CONFIG = {
   draft: { label: 'Brouillon', color: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300', icon: FileText },
@@ -52,6 +53,9 @@ export default function ChangeDetail() {
   const [error, setError] = useState(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [rejectModal, setRejectModal] = useState(false)
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [impactData, setImpactData] = useState(null)
+  const [impactLoading, setImpactLoading] = useState(false)
 
   useEffect(() => {
     load()
@@ -80,6 +84,24 @@ export default function ChangeDetail() {
       alert(err.message)
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  const handleAnalyzeImpact = async () => {
+    if (!change.affected_cis || change.affected_cis.length === 0) {
+      alert("Aucun CI n'est associé à ce changement.")
+      return
+    }
+
+    setImpactLoading(true)
+    try {
+      const ciIds = change.affected_cis.map(ci => typeof ci === 'object' ? ci.id : ci)
+      const data = await api.changesAnalyzeImpact(id, ciIds)
+      setImpactData(data)
+    } catch (err) {
+      alert("Erreur lors de l'analyse : " + err.message)
+    } finally {
+      setImpactLoading(false)
     }
   }
 
@@ -270,12 +292,22 @@ export default function ChangeDetail() {
           </div>
         )}
 
-        {change.affected_cis && change.affected_cis.length > 0 && (
+                {change.affected_cis && change.affected_cis.length > 0 && (
           <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
-            <h2 className="font-semibold text-slate-800 dark:text-slate-100 mb-3 flex items-center gap-2">
-              <TrendingDown size={18} className="text-red-600" />
-              CIs impactés ({change.affected_cis.length})
-            </h2>
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <TrendingDown size={18} className="text-red-600" />
+                CIs impactés ({change.affected_cis.length})
+              </h2>
+              <button
+                onClick={handleAnalyzeImpact}
+                disabled={impactLoading}
+                className="text-xs px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg font-medium disabled:opacity-50"
+              >
+                {impactLoading ? 'Analyse...' : 'Lancer l\'analyse d\'impact'}
+              </button>
+            </div>
+            
             <div className="space-y-2 text-sm">
               {change.affected_cis.map((ci) => (
                 <div key={ci.id || ci} className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-700/50 rounded">
@@ -283,16 +315,58 @@ export default function ChangeDetail() {
                 </div>
               ))}
             </div>
+
+            {/* Résultats de l'analyse */}
+            {impactData && (
+              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">
+                  Résultat de l'analyse (Impact récursif)
+                </h3>
+                
+                {impactData.has_critical_impact && (
+                  <div className="mb-3 p-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 rounded text-xs font-medium">
+                    ⚠️ Attention : {impactData.critical_impacts} CI(s) critique(s) seront impactés.
+                  </div>
+                )}
+
+                {impactData.impacted_cis.length === 0 ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 italic">
+                    Aucune dépendance en aval trouvée.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {impactData.impacted_cis.map((impact, idx) => (
+                      <li key={idx} className="text-xs flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                        <span className="font-medium text-slate-800 dark:text-slate-200">{impact.name}</span>
+                        ({impact.type} - Niveau {impact.level})
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Tickets liés */}
-      {change.tickets && change.tickets.length > 0 && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 mt-6">
-          <h2 className="font-semibold text-slate-800 dark:text-slate-100 mb-3">
-            Tickets liés ({change.tickets.length})
+            {/* Tickets liés */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 mt-6">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <LinkIcon size={18} className="text-blue-600 dark:text-blue-400" />
+            Tickets liés ({change.tickets?.length || 0})
           </h2>
+          <button
+            onClick={() => setShowLinkModal(true)}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg"
+          >
+            <Plus size={14} />
+            Lier un ticket
+          </button>
+        </div>
+
+        {change.tickets && change.tickets.length > 0 ? (
           <div className="space-y-2">
             {change.tickets.map((ticket) => (
               <Link
@@ -300,11 +374,29 @@ export default function ChangeDetail() {
                 to={`/tickets/${ticket.id}`}
                 className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
               >
-                <span className="text-sm text-slate-800 dark:text-slate-100">#{ticket.id} — {ticket.title}</span>
+                <span className="text-sm text-slate-800 dark:text-slate-100">
+                  #{ticket.id} — {ticket.title}
+                </span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  ({ticket.status} • {ticket.priority})
+                </span>
               </Link>
             ))}
           </div>
-        </div>
+        ) : (
+          <p className="text-sm text-slate-500 dark:text-slate-400 italic">
+            Aucun ticket lié.
+          </p>
+        )}
+      </div>
+
+      {showLinkModal && (
+        <LinkTicketModal
+          changeId={parseInt(id)}
+          existingTicketIds={change.tickets?.map(t => t.id) || []}
+          onClose={() => setShowLinkModal(false)}
+          onSuccess={() => { setShowLinkModal(false); load() }}
+        />
       )}
 
       {/* Modal refus */}
@@ -318,6 +410,99 @@ export default function ChangeDetail() {
     </div>
   )
 }
+
+
+function LinkTicketModal({ changeId, existingTicketIds, onClose, onSuccess }) {
+  const [tickets, setTickets] = useState([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [linking, setLinking] = useState(null)
+
+  useEffect(() => {
+    api.getTickets()
+      .then(data => {
+        const available = data.filter(t => !existingTicketIds.includes(t.id))
+        setTickets(available)
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error(err)
+        setLoading(false)
+      })
+  }, [])
+
+  const handleLink = async (ticketId) => {
+    setLinking(ticketId)
+    try {
+      await api.changesLinkTicket(changeId, ticketId)
+      onSuccess()
+    } catch (err) {
+      alert(err.message)
+      setLinking(null)
+    }
+  }
+
+  const filtered = tickets.filter(t =>
+    t.title.toLowerCase().includes(search.toLowerCase())
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white dark:bg-slate-800 rounded-xl max-w-2xl w-full p-6 max-h-[80vh] flex flex-col border border-slate-200 dark:border-slate-700">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-slate-800 dark:text-slate-100">Lier un ticket</h3>
+          <button onClick={onClose} className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="mb-4">
+          <input
+            type="text"
+            placeholder="Rechercher un ticket..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="input-dark"
+          />
+        </div>
+
+        {loading ? (
+          <p className="text-slate-500 dark:text-slate-400 text-sm text-center py-4">Chargement...</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-slate-500 dark:text-slate-400 text-sm text-center py-4">
+            {search ? 'Aucun ticket trouvé' : 'Tous les tickets sont déjà liés'}
+          </p>
+        ) : (
+          <div className="space-y-2 overflow-y-auto">
+            {filtered.map((ticket) => (
+              <button
+                key={ticket.id}
+                onClick={() => handleLink(ticket.id)}
+                disabled={linking === ticket.id}
+                className="w-full text-left flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-slate-200 dark:border-slate-600 hover:border-blue-300 dark:hover:border-blue-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm text-slate-800 dark:text-slate-100">
+                    #{ticket.id} — {ticket.title}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {ticket.status} • {ticket.priority}
+                  </p>
+                </div>
+                {linking === ticket.id ? (
+                  <Loader2 size={14} className="animate-spin text-blue-600 dark:text-blue-400" />
+                ) : (
+                  <LinkIcon size={14} className="text-slate-400 dark:text-slate-500" />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 
 function RejectModal({ changeId, onClose, onSuccess }) {
   const [reason, setReason] = useState('')

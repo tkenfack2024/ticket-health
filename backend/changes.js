@@ -1,6 +1,11 @@
 import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
 import { userHasPermission } from './knowledge.js'
+import {
+  notifyChangeApprovalRequired,
+  notifyChangeDecision,
+  notifyChangeImplemented,
+} from './notifications.js'
 
 // ==================== INITIALISATION ====================
 
@@ -346,7 +351,7 @@ export function createChangeRouter(db, logAction) {
 
   // ---- POST /api/changes/:id/submit ----
   // Soumettre pour approbation
-  router.post('/:id/submit', (req, res) => {
+  router.post('/:id/submit', async (req, res) => {
     const targetId = parseInt(req.params.id)
     const change = db.prepare('SELECT * FROM changes WHERE id = ?').get(targetId)
     if (!change) return res.status(404).json({ error: 'Changement non trouvé' })
@@ -365,14 +370,26 @@ export function createChangeRouter(db, logAction) {
     `).run(newStatus, targetId)
 
     logAction(req.user.id, req.user.name, 'submit', 'change', targetId,
-      `RFC soumise : ${newStatus === 'scheduled' ? 'auto-approuvée (Standard)' : 'en attente d\'approbation'}`)
+  `RFC soumise : ${newStatus === 'scheduled' ? 'auto-approuvée (Standard)' : 'en attente d\'approbation'}`)
 
-    res.json({ success: true, status: newStatus })
+// Notification
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+const updatedChange = db.prepare('SELECT * FROM changes WHERE id = ?').get(targetId)
+
+if (newStatus === 'pending_approval') {
+  try {
+    await notifyChangeApprovalRequired(db, updatedChange, frontendUrl)
+  } catch (err) {
+    console.error('Erreur notification approbation:', err)
+  }
+}
+
+res.json({ success: true, status: newStatus })
   })
 
   // ---- POST /api/changes/:id/approve ----
   // Approuver (admin)
-  router.post('/:id/approve', adminOnly, (req, res) => {
+  router.post('/:id/approve', adminOnly, async (req, res) => {
     const targetId = parseInt(req.params.id)
     const change = db.prepare('SELECT * FROM changes WHERE id = ?').get(targetId)
     if (!change) return res.status(404).json({ error: 'Changement non trouvé' })
@@ -391,14 +408,24 @@ export function createChangeRouter(db, logAction) {
     `).run(req.user.id, targetId)
 
     logAction(req.user.id, req.user.name, 'approve', 'change', targetId,
-      `RFC approuvée : ${change.title}`)
+  `RFC approuvée : ${change.title}`)
 
-    res.json({ success: true })
+// Notification
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+const updatedChange = db.prepare('SELECT * FROM changes WHERE id = ?').get(targetId)
+
+try {
+  await notifyChangeDecision(db, updatedChange, 'approved', null, frontendUrl)
+} catch (err) {
+  console.error('Erreur notification décision:', err)
+}
+
+res.json({ success: true })
   })
 
   // ---- POST /api/changes/:id/reject ----
   // Refuser (admin)
-  router.post('/:id/reject', adminOnly, (req, res) => {
+  router.post('/:id/reject', adminOnly, async (req, res) => {
     const { reason } = req.body
     if (!reason || !reason.trim()) {
       return res.status(400).json({ error: 'Motif de refus obligatoire' })
@@ -417,9 +444,19 @@ export function createChangeRouter(db, logAction) {
     `).run(reason.trim(), targetId)
 
     logAction(req.user.id, req.user.name, 'reject', 'change', targetId,
-      `RFC refusée : ${reason}`)
+  `RFC refusée : ${reason}`)
 
-    res.json({ success: true })
+// Notification
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+const updatedChange = db.prepare('SELECT * FROM changes WHERE id = ?').get(targetId)
+
+try {
+  await notifyChangeDecision(db, updatedChange, 'rejected', reason, frontendUrl)
+} catch (err) {
+  console.error('Erreur notification refus:', err)
+}
+
+res.json({ success: true })
   })
 
   // ---- POST /api/changes/:id/start ----
@@ -447,7 +484,7 @@ export function createChangeRouter(db, logAction) {
 
   // ---- POST /api/changes/:id/complete ----
   // Marquer comme réalisée
-  router.post('/:id/complete', (req, res) => {
+  router.post('/:id/complete', async (req, res) => {
     const targetId = parseInt(req.params.id)
     const change = db.prepare('SELECT * FROM changes WHERE id = ?').get(targetId)
     if (!change) return res.status(404).json({ error: 'Changement non trouvé' })
@@ -465,9 +502,19 @@ export function createChangeRouter(db, logAction) {
     `).run(targetId)
 
     logAction(req.user.id, req.user.name, 'complete', 'change', targetId,
-      `RFC réalisée : ${change.title}`)
+  `RFC réalisée : ${change.title}`)
 
-    res.json({ success: true })
+// Notification
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+const updatedChange = db.prepare('SELECT * FROM changes WHERE id = ?').get(targetId)
+
+try {
+  await notifyChangeImplemented(db, updatedChange, frontendUrl)
+} catch (err) {
+  console.error('Erreur notification réalisation:', err)
+}
+
+res.json({ success: true })
   })
 
   // ---- POST /api/changes/:id/rollback ----

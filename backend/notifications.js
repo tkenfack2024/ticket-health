@@ -4,6 +4,9 @@ import {
   ticketStatusChangedEmail,
   newCommentEmail,
   slaExceededEmail,
+  changeApprovalRequiredEmail,
+  changeDecisionEmail,
+  changeImplementedEmail,
 } from './email-templates.js'
 
 // ==================== HELPERS ====================
@@ -204,4 +207,63 @@ export function updatePreferences(db, userId, updates) {
   db.prepare(`UPDATE user_notifications_preferences SET ${fields.join(', ')} WHERE user_id = ?`).run(...values)
 
   return getPreferences(db, userId)
+}
+
+
+// ==================== NOTIFICATIONS CHANGEMENTS (RFC) ====================
+
+/**
+ * Notifie les admins qu'un changement est en attente d'approbation
+ */
+export async function notifyChangeApprovalRequired(db, change, frontendUrl) {
+  const admins = db.prepare(
+    "SELECT id, name, email FROM users WHERE role = 'admin' AND active = 1"
+  ).all()
+
+  if (!admins.length) return 0
+
+  const template = changeApprovalRequiredEmail({ change, frontendUrl })
+
+  let count = 0
+  for (const admin of admins) {
+    if (!admin.email) continue
+    const ok = await sendNotificationEmail(admin.email, template.subject, template.html)
+    if (ok) count++
+  }
+
+  return count
+}
+
+/**
+ * Notifie le demandeur d'un changement qu'il a été approuvé ou refusé
+ */
+export async function notifyChangeDecision(db, change, decision, reason, frontendUrl) {
+  if (!change.requested_by) return false
+
+  const requester = db.prepare(
+    'SELECT id, name, email FROM users WHERE id = ?'
+  ).get(change.requested_by)
+
+  if (!requester || !requester.email) return false
+
+  const template = changeDecisionEmail({ change, decision, reason, frontendUrl })
+
+  return await sendNotificationEmail(requester.email, template.subject, template.html)
+}
+
+/**
+ * Notifie le demandeur qu'un changement a été réalisé
+ */
+export async function notifyChangeImplemented(db, change, frontendUrl) {
+  if (!change.requested_by) return false
+
+  const requester = db.prepare(
+    'SELECT id, name, email FROM users WHERE id = ?'
+  ).get(change.requested_by)
+
+  if (!requester || !requester.email) return false
+
+  const template = changeImplementedEmail({ change, frontendUrl })
+
+  return await sendNotificationEmail(requester.email, template.subject, template.html)
 }

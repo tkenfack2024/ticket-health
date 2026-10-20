@@ -242,9 +242,190 @@ export function slaExceededEmail({ ticket, slaStatus, deadline, ticketUrl }) {
             </p>
           </div>
 
-          <a href="${ticketUrl}" style="${buttonStyle}">
+                    <a href="${ticketUrl}" style="${buttonStyle}">
             Traiter le ticket →
           </a>
+        </div>
+      </div>
+    `,
+  }
+}
+
+// ==================== TEMPLATE : CHANGEMENT À APPROUVER ====================
+
+export function changeApprovalRequiredEmail({ change, frontendUrl }) {
+  const typeLabels = {
+    standard: 'Standard',
+    normal: 'Normal',
+    emergency: 'Urgence',
+  }
+
+  const riskColors = {
+    low: '#16a34a',
+    medium: '#ca8a04',
+    high: '#ea580c',
+    critical: '#dc2626',
+  }
+
+  const typeColor = change.change_type === 'emergency' ? '#dc2626' : '#2563eb'
+  const riskColor = riskColors[change.risk_level] || '#64748b'
+
+  return {
+    subject: `🔀 Changement à approuver : RFC #${change.id} — ${change.title}`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background: #f8fafc;">
+        <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0;">
+          <h2 style="color: #1e40af; font-size: 20px; font-weight: bold; margin: 0 0 16px 0;">
+            🩺 HealthTicket
+          </h2>
+
+          <div style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
+            <p style="margin: 0; font-size: 14px; font-weight: bold; color: #1e40af;">
+              🔔 Un changement nécessite votre approbation
+            </p>
+          </div>
+
+          <p style="color: #334155; margin-bottom: 16px;">Bonjour Admin,</p>
+
+          <p style="color: #334155; margin-bottom: 24px;">
+            Un nouveau changement a été soumis et est en attente d'approbation :
+          </p>
+
+          <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <p style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600; color: #0f172a;">
+              RFC #${change.id} — ${change.title}
+            </p>
+            <p style="margin: 0 0 6px 0; font-size: 14px; color: #64748b;">
+              <strong>Type :</strong>
+              <span style="background: ${typeColor}20; color: ${typeColor}; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-left: 4px;">
+                ${typeLabels[change.change_type] || change.change_type}
+              </span>
+            </p>
+            <p style="margin: 0 0 6px 0; font-size: 14px; color: #64748b;">
+              <strong>Risque :</strong>
+              <span style="background: ${riskColor}20; color: ${riskColor}; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-left: 4px;">
+                ${change.risk_level}
+              </span>
+            </p>
+            <p style="margin: 0; font-size: 14px; color: #64748b;">
+              <strong>Priorité :</strong> ${change.priority}
+            </p>
+          </div>
+
+          ${change.description ? `
+            <div style="background: #f8fafc; padding: 12px; border-radius: 6px; margin-bottom: 16px;">
+              <p style="margin: 0; color: #334155; font-size: 14px;">
+                ${change.description.substring(0, 300)}${change.description.length > 300 ? '...' : ''}
+              </p>
+            </div>
+          ` : ''}
+
+          <a href="${frontendUrl}/admin/changes/${change.id}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 8px 0;">
+            Examiner le changement →
+          </a>
+
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 32px; text-align: center;">
+            — L'équipe HealthTicket
+          </p>
+        </div>
+      </div>
+    `,
+  }
+}
+
+// ==================== TEMPLATE : CHANGEMENT APPROUVÉ / REFUSÉ ====================
+
+export function changeDecisionEmail({ change, decision, reason, frontendUrl }) {
+  const isApproved = decision === 'approved'
+  const color = isApproved ? '#16a34a' : '#dc2626'
+  const bgColor = isApproved ? '#f0fdf4' : '#fef2f2'
+  const label = isApproved ? '✅ Changement approuvé' : '❌ Changement refusé'
+
+  return {
+    subject: `${isApproved ? '✅' : '❌'} RFC #${change.id} ${isApproved ? 'approuvé' : 'refusé'} — ${change.title}`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background: #f8fafc;">
+        <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0;">
+          <h2 style="color: #1e40af; font-size: 20px; font-weight: bold; margin: 0 0 16px 0;">
+            🩺 HealthTicket
+          </h2>
+
+          <div style="background: ${bgColor}; border-left: 4px solid ${color}; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
+            <p style="margin: 0; font-size: 16px; font-weight: bold; color: ${color};">
+              ${label}
+            </p>
+          </div>
+
+          <p style="color: #334155; margin-bottom: 16px;">Bonjour,</p>
+
+          <p style="color: #334155; margin-bottom: 24px;">
+            Votre demande de changement a été <strong>${isApproved ? 'approuvée' : 'refusée'}</strong> :
+          </p>
+
+          <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <p style="margin: 0; font-size: 18px; font-weight: 600; color: #0f172a;">
+              RFC #${change.id} — ${change.title}
+            </p>
+          </div>
+
+          ${!isApproved && reason ? `
+            <div style="background: #fef2f2; border: 1px solid #fecaca; padding: 12px; border-radius: 6px; margin-bottom: 16px;">
+              <p style="margin: 0 0 4px 0; font-size: 13px; font-weight: 600; color: #991b1b;">Motif :</p>
+              <p style="margin: 0; color: #7f1d1d; font-size: 14px;">${reason}</p>
+            </div>
+          ` : ''}
+
+          <a href="${frontendUrl}/admin/changes/${change.id}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 8px 0;">
+            Voir le changement →
+          </a>
+
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 32px; text-align: center;">
+            — L'équipe HealthTicket
+          </p>
+        </div>
+      </div>
+    `,
+  }
+}
+
+
+// ==================== TEMPLATE : CHANGEMENT RÉALISÉ ====================
+
+export function changeImplementedEmail({ change, frontendUrl }) {
+  return {
+    subject: `✅ RFC #${change.id} réalisé — ${change.title}`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background: #f8fafc;">
+        <div style="background: white; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0;">
+          <h2 style="color: #1e40af; font-size: 20px; font-weight: bold; margin: 0 0 16px 0;">
+            🩺 HealthTicket
+          </h2>
+
+          <div style="background: #f0fdf4; border-left: 4px solid #16a34a; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px;">
+            <p style="margin: 0; font-size: 16px; font-weight: bold; color: #16a34a;">
+              ✅ Changement réalisé avec succès
+            </p>
+          </div>
+
+          <p style="color: #334155; margin-bottom: 16px;">Bonjour,</p>
+
+          <p style="color: #334155; margin-bottom: 24px;">
+            Le changement suivant a été implémenté avec succès :
+          </p>
+
+          <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <p style="margin: 0; font-size: 18px; font-weight: 600; color: #0f172a;">
+              RFC #${change.id} — ${change.title}
+            </p>
+          </div>
+
+          <a href="${frontendUrl}/admin/changes/${change.id}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; margin: 8px 0;">
+            Voir les détails →
+          </a>
+
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 32px; text-align: center;">
+            — L'équipe HealthTicket
+          </p>
         </div>
       </div>
     `,
