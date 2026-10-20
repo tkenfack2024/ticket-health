@@ -14,6 +14,7 @@ import KnowledgeEdit from './pages/KnowledgeEdit'
 import CmdbDetail from './pages/admin/CmdbDetail'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import ProfileNotifications from './pages/ProfileNotifications'
 import Admin from './pages/Admin'
 import ProblemDetail from './pages/admin/ProblemDetail'
 import MyTickets from './pages/portal/MyTickets'
@@ -40,13 +41,13 @@ function App() {
             <Route path="knowledge/:id/edit" element={<KnowledgeEdit />} />
             <Route path="knowledge/:id" element={<KnowledgeArticle />} />
             <Route
-              path="tickets/new"
-              element={
-                <ProtectedRoute>
-                  <CreateTicket />
-                </ProtectedRoute>
-              }
-            />
+  		path="profile/notifications"
+  		element={
+    			<ProtectedRoute>
+      				<ProfileNotifications />
+    			</ProtectedRoute>
+  		   }
+		/>
             <Route
               path="admin"
               element={

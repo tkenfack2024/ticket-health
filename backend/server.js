@@ -12,6 +12,13 @@ import { startSlaCron } from './sla-cron.js'
 import { initKnowledgeTables, createKnowledgeRouter } from './knowledge.js'
 import { initGdprTables, createGdprRouter } from './gdpr.js'
 import { createIncidentsRouter } from './incidents.js'
+import {
+  notifyTicketAssigned,
+  notifyStatusChanged,
+  notifyNewComment,
+  getPreferences,
+  updatePreferences,
+} from './notifications.js'
 import { encrypt, decrypt, getEncryptionStatus } from './encryption.js'
 import { initCmdbTables, createCmdbRouter } from './cmdb.js'
 import { createPortalRouter } from './portal.js'
@@ -162,6 +169,21 @@ db.exec(`
     granted_by_name TEXT,
     granted_at TEXT DEFAULT (datetime('now', 'localtime')),
     UNIQUE(user_id, permission_code),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )
+`)
+
+// Table des préférences de notification par utilisateur
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_notifications_preferences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL UNIQUE,
+    notify_ticket_assigned INTEGER NOT NULL DEFAULT 1,
+    notify_status_changed INTEGER NOT NULL DEFAULT 1,
+    notify_new_comment INTEGER NOT NULL DEFAULT 1,
+    notify_sla_exceeded INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )
 `)
@@ -318,6 +340,27 @@ app.use('/api/cmdb', createCmdbRouter(db, logAction))
 app.use('/api/portal', createPortalRouter(db, logAction))
 app.use('/api/problems', createProblemRouter(db, logAction))
 
+// ==================== ROUTES : PRÉFÉRENCES NOTIFICATIONS ====================
+
+app.get('/api/notifications/preferences', authRequired, (req, res) => {
+  try {
+    const prefs = getPreferences(db, req.user.id)
+    res.json(prefs)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.patch('/api/notifications/preferences', authRequired, (req, res) => {
+  try {
+    const updated = updatePreferences(db, req.user.id, req.body)
+    logAction(req.user.id, req.user.name, 'update', 'notification_prefs', req.user.id, 'Préférences mises à jour')
+    res.json(updated)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ==================== ROUTES : TICKETS ====================
 
 app.get('/', (req, res) => {
@@ -441,7 +484,7 @@ const result = db.prepare(`
 })
 
 // ---- PATCH /api/tickets/:id ----
-app.patch('/api/tickets/:id', authRequired, (req, res) => {
+app.patch('/api/tickets/:id', authRequired, async (req, res) => {
   const { status, assignee, incident_type, is_dora_major, dora_criteria, dora_notification_date } = req.body
   const targetId = parseInt(req.params.id)
 
@@ -466,6 +509,7 @@ app.patch('/api/tickets/:id', authRequired, (req, res) => {
   }
 
   const previousStatus = ticket.status
+  const previousAssignee = ticket.assignee
 
   db.prepare(`
     UPDATE tickets
@@ -516,7 +560,26 @@ app.patch('/api/tickets/:id', authRequired, (req, res) => {
   if (is_dora_major !== undefined) actionDetails.push(`DORA majeur : ${updated.is_dora_major ? 'oui' : 'non'}`)
 
   logAction(req.user.id, req.user.name, 'update', 'ticket', targetId, actionDetails.join(' | '))
-  res.json(updated)
+
+// ==================== NOTIFICATIONS ====================
+
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+
+try {
+  // 1. Notification assignation
+  if (assignee !== undefined && assignee && assignee !== '-' && assignee !== previousAssignee) {
+    await notifyTicketAssigned(db, updated, assignee, frontendUrl)
+  }
+
+  // 2. Notification changement de statut
+  if (status && status !== previousStatus) {
+    await notifyStatusChanged(db, updated, previousStatus, status, frontendUrl)
+  }
+} catch (err) {
+  console.error('Erreur notification:', err)
+}
+
+res.json(updated)
 })
 
 // ---- POST /api/tickets/:id/archive ----
@@ -551,7 +614,7 @@ app.get('/api/tickets/:id/comments', authRequired, (req, res) => {
 })
 
 // ---- POST /api/tickets/:id/comments ----
-app.post('/api/tickets/:id/comments', authRequired, (req, res) => {
+app.post('/api/tickets/:id/comments', authRequired, async (req, res) => {
   const { author, text } = req.body
   if (!text || !text.trim()) {
     return res.status(400).json({ error: 'Le texte est obligatoire' })
@@ -566,11 +629,22 @@ app.post('/api/tickets/:id/comments', authRequired, (req, res) => {
   }
 
   const result = db.prepare(`
-    INSERT INTO comments (ticket_id, author, text) VALUES (?, ?, ?)
-  `).run(req.params.id, author?.trim() || req.user.name, text.trim())
+  INSERT INTO comments (ticket_id, author, text) VALUES (?, ?, ?)
+`).run(req.params.id, author?.trim() || req.user.name, text.trim())
 
-  const newComment = db.prepare('SELECT * FROM comments WHERE id = ?').get(result.lastInsertRowid)
-  res.status(201).json(newComment)
+const newComment = db.prepare('SELECT * FROM comments WHERE id = ?').get(result.lastInsertRowid)
+
+// ==================== NOTIFICATION COMMENTAIRE ====================
+
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
+
+try {
+  await notifyNewComment(db, ticket, newComment, req.user.id, req.user.name, frontendUrl)
+} catch (err) {
+  console.error('Erreur notification commentaire:', err)
+}
+
+res.status(201).json(newComment)
 })
 
 // ==================== ROUTES : ASSETS (public) ====================

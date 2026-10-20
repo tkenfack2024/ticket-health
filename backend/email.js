@@ -108,3 +108,26 @@ export async function sendSlaAlertEmail(to, userName, ticket, slaStatus, oldPrio
     html,
   })
 }
+
+// ==================== ENVOI GÉNÉRIQUE ====================
+
+export async function sendNotificationEmail(to, subject, html) {
+  if (!to) {
+    console.warn('⚠️ Pas de destinataire pour l\'email')
+    return false
+  }
+
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+      to,
+      subject,
+      html,
+    })
+    console.log(`📧 Email envoyé à ${to} : ${subject}`)
+    return true
+  } catch (err) {
+    console.error(`❌ Erreur email à ${to}:`, err.message)
+    return false
+  }
+}

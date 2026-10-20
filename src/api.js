@@ -377,4 +377,11 @@ adminGetAssets: (params = {}) => {
     return request(`/api/assets/full${qs ? '?' + qs : ''}`)
   },
 
+  // Préférences de notification
+  getNotificationPreferences: () => request('/api/notifications/preferences'),
+  updateNotificationPreferences: (data) => request('/api/notifications/preferences', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+
 }

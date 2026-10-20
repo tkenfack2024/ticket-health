@@ -11,6 +11,7 @@ import {
   Shield,
   BookOpen,
   ExternalLink,
+  Bell,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
@@ -100,6 +101,11 @@ export default function Layout() {
                   </span>
                 </div>
               </div>
+
+		<NavLink to="/profile/notifications" className={linkClass}>
+  		  <Bell size={20} />
+  		  Notifications
+		</NavLink>
 
               <ThemeToggle />
 
