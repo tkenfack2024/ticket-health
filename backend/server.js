@@ -25,6 +25,7 @@ import { encrypt, decrypt, getEncryptionStatus } from './encryption.js'
 import { initCmdbTables, createCmdbRouter } from './cmdb.js'
 import { createPortalRouter } from './portal.js'
 import { initProblemTables, createProblemRouter } from './problems.js'
+import { initSupplierTables, createSupplierRouter } from './suppliers.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -343,12 +344,14 @@ app.use('/api/portal', createPortalRouter(db, logAction))
 app.use('/api/problems', createProblemRouter(db, logAction))
 app.use('/api/catalog', createCatalogRouter(db, logAction))
 app.use('/api/changes', createChangeRouter(db, logAction))
+app.use('/api/suppliers', createSupplierRouter(db, logAction))
 
 // ==================== ROUTES : PRÉFÉRENCES NOTIFICATIONS ====================
 
 // Initialiser le catalogue
 initCatalogTables(db)
 initChangeTables(db)
+initSupplierTables(db)
 
 app.get('/api/notifications/preferences', authRequired, (req, res) => {
   try {

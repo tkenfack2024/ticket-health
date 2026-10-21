@@ -12,7 +12,9 @@ import {
   BookOpen,
   ExternalLink,
   Bell,
+  Building2,
 } from 'lucide-react'
+
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
 
@@ -70,11 +72,17 @@ export default function Layout() {
             Base de connaissances
           </NavLink>
 
-          {isAdmin && (
-            <NavLink to="/admin" className={linkClass}>
-              <Shield size={20} />
-              Administration
-            </NavLink>
+                              {isAdmin && (
+            <>
+              <NavLink to="/admin/suppliers" className={linkClass}>
+                <Building2 size={20} />
+                Fournisseurs
+              </NavLink>
+              <NavLink to="/admin" end className={linkClass}>
+                <Shield size={20} />
+                Administration
+              </NavLink>
+            </>
           )}
 
           <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">

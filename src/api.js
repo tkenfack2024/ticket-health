@@ -460,4 +460,49 @@ adminGetAssets: (params = {}) => {
     body: JSON.stringify({ ci_ids: ciIds }),
   }),
 
+  // Fournisseurs (ISO 20000)
+  suppliersGetAll: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/suppliers${qs ? '?' + qs : ''}`)
+  },
+  suppliersCreate: (data) => request('/api/suppliers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  suppliersUpdate: (id, data) => request(`/api/suppliers/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  suppliersDelete: (id) => request(`/api/suppliers/${id}`, {
+    method: 'DELETE',
+  }),
+
+  // Fichiers fournisseurs
+  suppliersGetFiles: (supplierId) => request(`/api/suppliers/${supplierId}/files`),
+  suppliersUploadFile: async (supplierId, file) => {
+    const token = localStorage.getItem('ht_token')
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const res = await fetch(`${API_URL}/api/suppliers/${supplierId}/files`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    })
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: 'Erreur upload' }))
+      throw new Error(error.error || `Erreur HTTP ${res.status}`)
+    }
+    return res.json()
+  },
+  suppliersDeleteFile: (fileId) => request(`/api/suppliers/files/${fileId}`, { method: 'DELETE' }),
+  suppliersDownloadFileUrl: (fileId) => {
+    const token = localStorage.getItem('ht_token')
+    return `${API_URL}/api/suppliers/files/${fileId}/download?token=${token}`
+  },
+
 }

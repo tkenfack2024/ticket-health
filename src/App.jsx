@@ -25,6 +25,7 @@ import PortalKbArticle from './pages/portal/KbArticle'
 import PortalCatalog from './pages/portal/Catalog'
 import CatalogService from './pages/portal/CatalogService'
 import MyRequests from './pages/portal/MyRequests'
+import Suppliers from './pages/admin/Suppliers'
 
 
 function App() {
@@ -39,7 +40,6 @@ function App() {
           {/* Routes ADMIN (avec Layout) */}
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
-
             {/* TICKETS — l'ordre est important ! */}
             <Route path="tickets" element={<TicketList />} />
             <Route
@@ -77,6 +77,9 @@ function App() {
                 </ProtectedRoute>
               }
             />
+
+	<Route path="admin/suppliers" element={<ProtectedRoute adminOnly><Suppliers /></ProtectedRoute>} />
+
             <Route
               path="cmdb/:id"
               element={
