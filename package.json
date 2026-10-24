@@ -8,13 +8,14 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-   "dependencies": {
+     "dependencies": {
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.0.0",
     "react-markdown": "^9.0.1",
-    "remark-gfm": "^4.0.0"
+    "remark-gfm": "^4.0.0",
+    "recharts": "^2.15.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
