@@ -138,6 +138,7 @@ function PatientModal({ item, onClose, onSuccess }) {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [deleting, setDeleting] = useState(false) // <-- ICI, dans PatientModal
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -217,10 +218,32 @@ function PatientModal({ item, onClose, onSuccess }) {
           </div>
 
           <div className="flex gap-2 pt-2">
+            {item && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!confirm(`Supprimer définitivement le patient ${item.first_name} ${item.last_name} ?`)) return
+                  setDeleting(true)
+                  try {
+                    await api.patientsDelete(item.id)
+                    onSuccess()
+                  } catch (err) {
+                    alert(err.message)
+                    setDeleting(false)
+                  }
+                }}
+                disabled={deleting}
+                className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50"
+              >
+                {deleting ? 'Suppression...' : 'Supprimer'}
+              </button>
+            )}
             <button type="submit" disabled={loading} className="flex-1 bg-rose-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-rose-700">
               {loading ? 'Enregistrement...' : (item ? 'Enregistrer les modifications' : 'Créer le dossier patient')}
             </button>
-            <button type="button" onClick={onClose} className="flex-1 border border-slate-300 text-slate-600 py-2 rounded-lg text-sm">Annuler</button>
+            <button type="button" onClick={onClose} className="flex-1 border border-slate-300 text-slate-600 py-2 rounded-lg text-sm">
+              Annuler
+            </button>
           </div>
         </form>
       </div>

@@ -782,6 +782,48 @@ export function createPatientRouter(db, logAction) {
     res.send(exam.file_data)
   })
 
+  // ==================== DELETE /api/patients/:id ====================
+  router.delete('/:id', async (req, res) => {
+    const { tenantId } = req.user
+
+    // --- MODE TURSO ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        // Vérifier que le patient existe
+        const checkResult = await tursoDb.execute({
+          sql: 'SELECT id, first_name, last_name FROM patients WHERE id = ?',
+          args: [req.params.id]
+        })
+        const patient = checkResult.rows[0]
+        if (!patient) return res.status(404).json({ error: 'Patient non trouvé' })
+
+        // Supprimer le patient (les tables liées ont ON DELETE CASCADE)
+        await tursoDb.execute({
+          sql: 'DELETE FROM patients WHERE id = ?',
+          args: [req.params.id]
+        })
+
+        logAction(req.user.id, req.user.name, 'delete', 'patient', req.params.id, `Patient supprimé : ${patient.first_name} ${patient.last_name}`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso DELETE patient:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    const patient = db.prepare('SELECT id, first_name, last_name FROM patients WHERE id = ?').get(req.params.id)
+    if (!patient) return res.status(404).json({ error: 'Patient non trouvé' })
+
+    db.prepare('DELETE FROM patients WHERE id = ?').run(req.params.id)
+    logAction(req.user.id, req.user.name, 'delete', 'patient', req.params.id, `Patient supprimé : ${patient.first_name} ${patient.last_name}`)
+    res.json({ success: true })
+  })
+
   // ==================== GET /:id (DOIT ÊTRE LE DERNIER) ====================
   router.get('/:id', async (req, res) => {
     const { tenantId } = req.user

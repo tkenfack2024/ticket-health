@@ -596,6 +596,8 @@ adminGetAssets: (params = {}) => {
     body: JSON.stringify(data),
   }),
 
+    patientsDelete: (id) => request(`/api/patients/${id}`, { method: 'DELETE' }),
+
   // Visites (Triage)
   visitsGetAll: (params = {}) => {
     const clean = {}
