@@ -19,7 +19,7 @@ export default function KnowledgeEdit() {
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const [viewMode, setViewMode] = useState('split') // 'edit' | 'preview' | 'split'
+  const [viewMode, setViewMode] = useState('split')
 
   const [form, setForm] = useState({
     title: '',
@@ -40,10 +40,11 @@ export default function KnowledgeEdit() {
           api.get('/api/kb/categories'),
           api.get('/api/kb/my-permissions'),
         ])
+        console.log('CATÉGORIES CHARGÉES :', cats)
         setCategories(cats || [])
         setCanPublish((perms.permissions || []).includes('kb.publish'))
       } catch (err) {
-        console.error(err)
+        console.error('Erreur chargement catégories :', err)
       }
     }
     loadMeta()
@@ -103,7 +104,6 @@ export default function KnowledgeEdit() {
         result = await api.post('/api/kb/articles', payload)
       }
 
-      // Redirection vers la vue de l'article
       navigate(`/knowledge/${result.id}`)
     } catch (err) {
       setError(err.message)
@@ -191,6 +191,9 @@ export default function KnowledgeEdit() {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
+              <p className="text-xs text-slate-400 mt-1">
+                {categories.length} catégorie{categories.length > 1 ? 's' : ''} disponible{categories.length > 1 ? 's' : ''}
+              </p>
             </div>
 
             <div>
@@ -257,7 +260,7 @@ export default function KnowledgeEdit() {
                 value={form.workaround}
                 onChange={(e) => setForm({ ...form, workaround: e.target.value })}
                 placeholder="Décrivez la solution temporaire en attendant un correctif..."
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none placeholder:text-slate-400 placeholder:italic"
               />
             </div>
           )}
@@ -275,7 +278,6 @@ export default function KnowledgeEdit() {
               </span>
             </div>
 
-            {/* Toggle vue */}
             <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
               <button
                 type="button"
@@ -310,23 +312,20 @@ export default function KnowledgeEdit() {
             </div>
           </div>
 
-          {/* Éditeur + Aperçu */}
           <div className={`flex ${viewMode === 'split' ? 'flex-col md:flex-row' : ''}`}>
-            {/* Éditeur */}
             {(viewMode === 'edit' || viewMode === 'split') && (
               <textarea
                 required
                 value={form.content}
                 onChange={(e) => setForm({ ...form, content: e.target.value })}
-                placeholder="## Contexte&#10;&#10;Description du problème...&#10;&#10;## Étapes&#10;&#10;1. Première étape&#10;2. Deuxième étape&#10;&#10;> Note importante"
-                className={`font-mono text-sm p-4 focus:outline-none resize-none ${
+                placeholder={`## Contexte\n\nDescription du problème...\n\n## Étapes\n\n1. Première étape\n2. Deuxième étape\n\n> Note importante`}
+                className={`font-mono text-sm p-4 focus:outline-none resize-none placeholder:text-slate-400 placeholder:italic ${
                   viewMode === 'split' ? 'w-full md:w-1/2 border-b md:border-b-0 md:border-r border-slate-200' : 'w-full'
                 }`}
                 style={{ minHeight: '400px' }}
               />
             )}
 
-            {/* Aperçu */}
             {(viewMode === 'preview' || viewMode === 'split') && (
               <div className={`p-4 markdown-content overflow-auto ${
                 viewMode === 'split' ? 'w-full md:w-1/2 bg-slate-50' : 'w-full'
@@ -346,7 +345,6 @@ export default function KnowledgeEdit() {
           </div>
         </div>
 
-        {/* Boutons bas */}
         <div className="flex gap-3">
           <button
             type="submit"

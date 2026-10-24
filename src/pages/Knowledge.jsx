@@ -46,12 +46,16 @@ export default function Knowledge() {
         api.get('/api/kb/categories'),
         api.get('/api/kb/my-permissions'),
       ])
+      
+      console.log('DEBUG - Permissions reçues:', perms)
+      
       setArticles(data.articles || [])
       setTotal(data.total || 0)
       setCategories(cats || [])
       setCanWrite((perms.permissions || []).includes('kb.write'))
       setError(null)
     } catch (err) {
+      console.error('Erreur chargement KB:', err)
       setError(err.message)
     } finally {
       setLoading(false)
