@@ -26,19 +26,19 @@ export function createAdminRouter(db, logAction) {
 
   // ---- GET /api/admin/users ----
   // Liste tous les utilisateurs
-  router.get('/users', (req, res) => {
+    router.get('/users', (req, res) => {
     const users = db.prepare(`
-      SELECT id, name, email, phone, role, active, created_at
+      SELECT id, name, email, phone, role, custom_role, active, created_at
       FROM users
       ORDER BY id DESC
     `).all()
     res.json(users)
   })
 
-  // ---- POST /api/admin/users ----
+   // ---- POST /api/admin/users ----
   // Créer un nouvel utilisateur
   router.post('/users', async (req, res) => {
-    const { name, email, phone, password, role } = req.body
+    const { name, email, phone, password, role, custom_role } = req.body
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Nom, email et mot de passe sont obligatoires' })
@@ -46,8 +46,16 @@ export function createAdminRouter(db, logAction) {
     if (password.length < 6) {
       return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères' })
     }
-    if (!['admin', 'technicien', 'user'].includes(role)) {
-      return res.status(400).json({ error: 'Rôle invalide' })
+    if (role && !['admin', 'technicien', 'user'].includes(role)) {
+      return res.status(400).json({ error: 'Rôle de base invalide' })
+    }
+
+    // Vérifier que le custom_role existe si fourni
+    if (custom_role) {
+      const roleExists = db.prepare('SELECT id FROM roles WHERE name = ?').get(custom_role)
+      if (!roleExists) {
+        return res.status(400).json({ error: 'Ce rôle personnalisé n\'existe pas' })
+      }
     }
 
     const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase())
@@ -57,24 +65,24 @@ export function createAdminRouter(db, logAction) {
 
     const hash = bcrypt.hashSync(password, 10)
     const result = db.prepare(`
-      INSERT INTO users (name, email, phone, password_hash, role)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(name.trim(), email.toLowerCase().trim(), phone || null, hash, role)
+      INSERT INTO users (name, email, phone, password_hash, role, custom_role)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(name.trim(), email.toLowerCase().trim(), phone || null, hash, role || 'user', custom_role || null)
 
     const newUser = db.prepare(`
-      SELECT id, name, email, phone, role, active, created_at
+      SELECT id, name, email, phone, role, custom_role, active, created_at
       FROM users WHERE id = ?
     `).get(result.lastInsertRowid)
 
-    logAction(req.user.id, req.user.name, 'create', 'user', newUser.id, `Nouvel utilisateur : ${newUser.email} (${newUser.role})`)
+    logAction(req.user.id, req.user.name, 'create', 'user', newUser.id, `Nouvel utilisateur : ${newUser.email} (${newUser.role}${newUser.custom_role ? ' / ' + newUser.custom_role : ''})`)
 
     res.status(201).json(newUser)
   })
 
-  // ---- PATCH /api/admin/users/:id ----
-  // Modifier un utilisateur (rôle, nom, téléphone, actif)
+    // ---- PATCH /api/admin/users/:id ----
+  // Modifier un utilisateur (rôle, nom, téléphone, actif, custom_role)
   router.patch('/users/:id', (req, res) => {
-    const { name, phone, role, active } = req.body
+    const { name, phone, role, custom_role, active } = req.body
     const targetId = parseInt(req.params.id)
 
     const target = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId)
@@ -85,9 +93,16 @@ export function createAdminRouter(db, logAction) {
       return res.status(403).json({ error: 'Vous ne pouvez pas modifier votre propre rôle' })
     }
 
-    // Validation rôle
     if (role && !['admin', 'technicien', 'user'].includes(role)) {
-      return res.status(400).json({ error: 'Rôle invalide' })
+      return res.status(400).json({ error: 'Rôle de base invalide' })
+    }
+
+    // Vérifier custom_role si fourni
+    if (custom_role && custom_role !== null) {
+      const roleExists = db.prepare('SELECT id FROM roles WHERE name = ?').get(custom_role)
+      if (!roleExists) {
+        return res.status(400).json({ error: 'Ce rôle personnalisé n\'existe pas' })
+      }
     }
 
     db.prepare(`
@@ -95,22 +110,25 @@ export function createAdminRouter(db, logAction) {
       SET name = COALESCE(?, name),
           phone = COALESCE(?, phone),
           role = COALESCE(?, role),
+          custom_role = CASE WHEN ? = '__CLEAR__' THEN NULL ELSE COALESCE(?, custom_role) END,
           active = COALESCE(?, active)
       WHERE id = ?
     `).run(
       name || null,
       phone !== undefined ? phone : null,
       role || null,
+      custom_role === null ? '__CLEAR__' : 'NO_CHANGE',
+      custom_role || null,
       active !== undefined ? (active ? 1 : 0) : null,
       targetId
     )
 
     const updated = db.prepare(`
-      SELECT id, name, email, phone, role, active, created_at
+      SELECT id, name, email, phone, role, custom_role, active, created_at
       FROM users WHERE id = ?
     `).get(targetId)
 
-    logAction(req.user.id, req.user.name, 'update', 'user', targetId, `Utilisateur modifié : ${updated.email} (${updated.role}, ${updated.active ? 'actif' : 'désactivé'})`)
+    logAction(req.user.id, req.user.name, 'update', 'user', targetId, `Utilisateur modifié : ${updated.email} (${updated.role}${updated.custom_role ? ' / ' + updated.custom_role : ''}, ${updated.active ? 'actif' : 'désactivé'})`)
 
     res.json(updated)
   })
@@ -795,17 +813,34 @@ export function createAdminRouter(db, logAction) {
 
   // ---- GET /api/admin/users-permissions ----
   // Liste tous les users avec leurs permissions
-  router.get('/users-permissions', (req, res) => {
+    router.get('/users-permissions', (req, res) => {
     const users = db.prepare(`
-      SELECT id, name, email, role, active FROM users ORDER BY id ASC
+      SELECT id, name, email, role, custom_role, active FROM users ORDER BY id ASC
     `).all()
 
     const result = users.map(user => {
-      // Récupérer les permissions de cet user
-      const perms = user.role === 'admin'
-        ? db.prepare('SELECT code FROM permissions').all().map(p => p.code)
-        : db.prepare('SELECT permission_code as code FROM user_permissions WHERE user_id = ?')
-            .all(user.id).map(p => p.code)
+      let perms = []
+      
+      if (user.role === 'admin') {
+        perms = db.prepare('SELECT code FROM permissions').all().map(p => p.code)
+      } else {
+        // 1. Permissions du custom_role
+        if (user.custom_role) {
+          const rolePerms = db.prepare(`
+            SELECT rp.permission_code as code 
+            FROM role_permissions rp 
+            JOIN roles r ON rp.role_id = r.id 
+            WHERE r.name = ?
+          `).all(user.custom_role).map(p => p.code)
+          perms.push(...rolePerms)
+        }
+        // 2. Permissions individuelles
+        const userPerms = db.prepare('SELECT permission_code as code FROM user_permissions WHERE user_id = ?')
+          .all(user.id).map(p => p.code)
+        perms.push(...userPerms)
+        // Dédoublonner
+        perms = [...new Set(perms)]
+      }
 
       return {
         ...user,
@@ -815,6 +850,31 @@ export function createAdminRouter(db, logAction) {
     })
 
     res.json(result)
+  })
+
+  // POST /api/admin/permissions
+  router.post('/permissions', (req, res) => {
+    const { code, label, module, description } = req.body
+    
+    if (!code || !label || !module) {
+      return res.status(400).json({ error: 'Code, label et module sont obligatoires' })
+    }
+
+    try {
+      // On nettoie le code (minuscules, pas d'espaces)
+      const cleanCode = code.trim().toLowerCase().replace(/\s+/g, '.')
+      
+      const result = db.prepare(`
+        INSERT INTO permissions (code, label, module, description)
+        VALUES (?, ?, ?, ?)
+      `).run(cleanCode, label.trim(), module.trim().toLowerCase(), description || null)
+
+      logAction(req.user.id, req.user.name, 'create', 'permission', result.lastInsertRowid, `Permission créée : ${cleanCode}`)
+      res.status(201).json({ success: true, code: cleanCode })
+    } catch (err) {
+      if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce code de permission existe déjà' })
+      res.status(500).json({ error: err.message })
+    }
   })
 
   // ---- POST /api/admin/users/:id/permissions ----
@@ -992,6 +1052,63 @@ export function createAdminRouter(db, logAction) {
       last_review: lastReview,
       unreviewed_by_day: byDay,
     })
+  })
+
+
+  // ==================== RÔLES DYNAMIQUES ====================
+
+  // GET /api/admin/roles
+  router.get('/roles', (req, res) => {
+    const roles = db.prepare(`
+      SELECT r.*, 
+      (SELECT COUNT(*) FROM users u WHERE u.custom_role = r.name) as user_count,
+      (SELECT COUNT(*) FROM role_permissions rp WHERE rp.role_id = r.id) as perm_count
+      FROM roles r ORDER BY r.name ASC
+    `).all()
+    res.json(roles)
+  })
+
+  // POST /api/admin/roles
+  router.post('/roles', (req, res) => {
+    const { name, description } = req.body
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Le nom est obligatoire' })
+    }
+    try {
+      const result = db.prepare('INSERT INTO roles (name, description) VALUES (?, ?)')
+        .run(name.trim(), description || null)
+      logAction(req.user.id, req.user.name, 'create', 'role', result.lastInsertRowid, `Rôle créé : ${name}`)
+      res.status(201).json({ success: true, id: result.lastInsertRowid })
+    } catch (err) {
+      if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce rôle existe déjà' })
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  // GET /api/admin/roles/:id/permissions
+  router.get('/roles/:id/permissions', (req, res) => {
+    const perms = db.prepare('SELECT permission_code FROM role_permissions WHERE role_id = ?').all(req.params.id)
+    res.json(perms.map(p => p.permission_code))
+  })
+
+  // POST /api/admin/roles/:id/permissions
+  router.post('/roles/:id/permissions', (req, res) => {
+    const { permission_code } = req.body
+    if (!permission_code) return res.status(400).json({ error: 'permission_code obligatoire' })
+    try {
+      db.prepare('INSERT INTO role_permissions (role_id, permission_code) VALUES (?, ?)')
+        .run(req.params.id, permission_code)
+      res.json({ success: true })
+    } catch (err) {
+      res.status(400).json({ error: 'Permission déjà accordée à ce rôle' })
+    }
+  })
+
+  // DELETE /api/admin/roles/:id/permissions/:code
+  router.delete('/roles/:id/permissions/:code', (req, res) => {
+    db.prepare('DELETE FROM role_permissions WHERE role_id = ? AND permission_code = ?')
+      .run(req.params.id, req.params.code)
+    res.json({ success: true })
   })
 
   return router

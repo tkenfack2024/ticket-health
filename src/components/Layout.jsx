@@ -13,13 +13,20 @@ import {
   ExternalLink,
   Bell,
   Building2,
+  Building,
+  BarChart3,
+  Bed,
+  Users,
+  ShieldAlert,
+  Clock,
+  Pill,
 } from 'lucide-react'
 
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
 
 export default function Layout() {
-  const { user, isAuthenticated, isAdmin, logout } = useAuth()
+  const { user, isAuthenticated, isAdmin, logout, hasPermission } = useAuth()
   const navigate = useNavigate()
 
   const linkClass = ({ isActive }) =>
@@ -72,17 +79,77 @@ export default function Layout() {
             Base de connaissances
           </NavLink>
 
-                              {isAdmin && (
+          {/* --- LIENS AVEC PERMISSIONS GRANULAIRES --- */}
+
+          {/* Fournisseurs (Admin ou permission supplier.manage) */}
+          {(isAdmin || hasPermission('supplier.manage')) && (
+            <NavLink to="/admin/suppliers" className={linkClass}>
+              <Building2 size={20} />
+              Fournisseurs
+            </NavLink>
+          )}
+          
+          {/* Risques (Admin ou permission risk.view) */}
+          {(isAdmin || hasPermission('risk.view')) && (
+            <NavLink to="/admin/risks" className={linkClass}>
+              <ShieldAlert size={20} />
+              Risques
+            </NavLink>
+          )}
+
+          {/* Bâtiments (Admin ou permission facility.manage) */}
+          {(isAdmin || hasPermission('facility.manage')) && (
+            <NavLink to="/admin/facility" className={linkClass}>
+              <Building size={20} />
+              Bâtiments & Salles
+            </NavLink>
+          )}
+
+          {/* Capacité (Admin ou permission stats.view) */}
+          {(isAdmin || hasPermission('stats.view')) && (
+            <NavLink to="/admin/capacity" className={linkClass}>
+              <BarChart3 size={20} />
+              Capacité & Perf
+            </NavLink>
+          )}
+
+          {/* Lits & Tables (Admin ou permission resource.manage) */}
+          {(isAdmin || hasPermission('resource.manage')) && (
+            <NavLink to="/admin/resources" className={linkClass}>
+              <Bed size={20} />
+              Lits & Tables
+            </NavLink>
+          )}
+
+          {/* Accueil Patients (Admin ou permission patient.read) */}
+          {(isAdmin || hasPermission('patient.read')) && (
+            <NavLink to="/admin/patients" className={linkClass}>
+              <Users size={20} />
+              Accueil Patients
+            </NavLink>
+          )}
+
+          {/* Salle d'attente & Suivi Médical (Admin ou permission medical.read) */}
+          {(isAdmin || hasPermission('medical.read')) && (
             <>
-              <NavLink to="/admin/suppliers" className={linkClass}>
-                <Building2 size={20} />
-                Fournisseurs
+              <NavLink to="/admin/waiting-room" className={linkClass}>
+                <Clock size={20} />
+                Salle d'attente
               </NavLink>
-              <NavLink to="/admin" end className={linkClass}>
-                <Shield size={20} />
-                Administration
+              
+              <NavLink to="/admin/medical-followup" className={linkClass}>
+                <Pill size={20} />
+                Suivi Médical
               </NavLink>
             </>
+          )}
+
+          {/* --- LIENS STRICTEMENT ADMIN --- */}
+          {isAdmin && (
+            <NavLink to="/admin" end className={linkClass}>
+              <Shield size={20} />
+              Administration
+            </NavLink>
           )}
 
           <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
@@ -105,15 +172,17 @@ export default function Layout() {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-slate-800 dark:text-slate-100 text-sm truncate">{user.name}</p>
                   <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${roleBadgeClass}`}>
+
+
                     {user.role}
                   </span>
                 </div>
               </div>
 
-		<NavLink to="/profile/notifications" className={linkClass}>
-  		  <Bell size={20} />
-  		  Notifications
-		</NavLink>
+              <NavLink to="/profile/notifications" className={linkClass}>
+                <Bell size={20} />
+                Notifications
+              </NavLink>
 
               <ThemeToggle />
 

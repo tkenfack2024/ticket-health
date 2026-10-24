@@ -5,6 +5,18 @@ import { api } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 
+// Calcule la route de destination selon le rôle ET les permissions granulaires
+function getTargetPath(user, redirectTo) {
+  const hasAnyPermission = Array.isArray(user.permissions) && user.permissions.length > 0
+  const canAccessBackOffice =
+    user.role === 'admin' || user.role === 'technicien' || hasAnyPermission
+
+  if (canAccessBackOffice) {
+    return redirectTo && redirectTo !== '/' ? redirectTo : '/'
+  }
+  return '/portal'
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -22,16 +34,22 @@ export default function Login() {
 
   const redirectTo = location.state?.from?.pathname || '/'
 
-  const handlePasswordLogin = async (e) => {
+    const handlePasswordLogin = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
       const res = await api.login({ email, password })
-      login(res.user, res.token)
-      const targetPath = res.user.role === 'admin' || res.user.role === 'technicien'
+      // On attend que login() récupère les permissions
+      const freshUser = await login(res.user, res.token)
+      
+      const hasAnyPermission = Array.isArray(freshUser.permissions) && freshUser.permissions.length > 0
+      const canAccessBackOffice = freshUser.role === 'admin' || freshUser.role === 'technicien' || hasAnyPermission
+      
+      const targetPath = canAccessBackOffice
         ? (redirectTo && redirectTo !== '/' ? redirectTo : '/')
         : '/portal'
+        
       navigate(targetPath, { replace: true })
     } catch (err) {
       setError(err.message)
@@ -63,10 +81,7 @@ export default function Login() {
     try {
       const res = await api.verifyOtp(email, otpCode)
       login(res.user, res.token)
-      const targetPath = res.user.role === 'admin' || res.user.role === 'technicien'
-        ? (redirectTo && redirectTo !== '/' ? redirectTo : '/')
-        : '/portal'
-      navigate(targetPath, { replace: true })
+      navigate(getTargetPath(res.user, redirectTo), { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {

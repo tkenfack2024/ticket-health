@@ -26,7 +26,7 @@ export function createAuthRouter(db, logAction) {
       VALUES (?, ?, ?, ?, 'user')
     `).run(name.trim(), email.toLowerCase().trim(), phone || null, hash)
 
-    const user = db.prepare('SELECT id, name, email, phone, role FROM users WHERE id = ?').get(result.lastInsertRowid)
+    const user = db.prepare('SELECT id, name, email, phone, role, custom_role FROM users WHERE id = ?').get(result.lastInsertRowid)
     logAction(user.id, user.name, 'register', 'user', user.id, `Nouveau compte : ${user.email}`)
 
     const token = jwt.sign(
@@ -63,8 +63,37 @@ export function createAuthRouter(db, logAction) {
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     )
 
+    // --- Calcul des permissions (admin = tout, sinon role + user) ---
+    let permissions = []
+    if (user.role === 'admin') {
+      permissions = db.prepare('SELECT code FROM permissions').all().map(p => p.code)
+    } else {
+      if (user.custom_role) {
+        const rolePerms = db.prepare(`
+          SELECT rp.permission_code as code 
+          FROM role_permissions rp 
+          JOIN roles r ON rp.role_id = r.id 
+          WHERE r.name = ?
+        `).all(user.custom_role).map(p => p.code)
+        permissions.push(...rolePerms)
+      }
+      const userPerms = db.prepare('SELECT permission_code as code FROM user_permissions WHERE user_id = ?')
+        .all(user.id).map(p => p.code)
+      permissions.push(...userPerms)
+      permissions = [...new Set(permissions)]
+    }
+
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        custom_role: user.custom_role,
+        permissions: permissions,
+        isAdmin: user.role === 'admin'
+      },
       token,
     })
   })
@@ -120,25 +149,74 @@ export function createAuthRouter(db, logAction) {
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     )
 
+    // --- Calcul des permissions ---
+    let permissions = []
+    if (user.role === 'admin') {
+      permissions = db.prepare('SELECT code FROM permissions').all().map(p => p.code)
+    } else {
+      if (user.custom_role) {
+        const rolePerms = db.prepare(`
+          SELECT rp.permission_code as code 
+          FROM role_permissions rp 
+          JOIN roles r ON rp.role_id = r.id 
+          WHERE r.name = ?
+        `).all(user.custom_role).map(p => p.code)
+        permissions.push(...rolePerms)
+      }
+      const userPerms = db.prepare('SELECT permission_code as code FROM user_permissions WHERE user_id = ?')
+        .all(user.id).map(p => p.code)
+      permissions.push(...userPerms)
+      permissions = [...new Set(permissions)]
+    }
+
     res.json({
-      user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        custom_role: user.custom_role,
+        permissions: permissions,
+        isAdmin: user.role === 'admin'
+      },
       token,
     })
   })
 
-  router.get('/me', (req, res) => {
-    const header = req.headers.authorization
-    if (!header || !header.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Non authentifié' })
+  router.get('/me', authRequired, (req, res) => {
+    const user = db.prepare('SELECT id, name, email, phone, role, custom_role, active FROM users WHERE id = ?').get(req.user.id)
+    if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' })
+
+    let permissions = []
+
+    if (user.role === 'admin') {
+      // Admin : toutes les permissions
+      permissions = db.prepare('SELECT code FROM permissions').all().map(p => p.code)
+    } else {
+      // 1. Permissions du rôle métier (si custom_role existe)
+      if (user.custom_role) {
+        const rolePerms = db.prepare(`
+          SELECT rp.permission_code as code 
+          FROM role_permissions rp 
+          JOIN roles r ON rp.role_id = r.id 
+          WHERE r.name = ?
+        `).all(user.custom_role).map(p => p.code)
+        permissions.push(...rolePerms)
+      }
+      // 2. Permissions individuelles
+      const userPerms = db.prepare('SELECT permission_code as code FROM user_permissions WHERE user_id = ?')
+        .all(user.id).map(p => p.code)
+      permissions.push(...userPerms)
+      // Dédoublonner
+      permissions = [...new Set(permissions)]
     }
-    try {
-      const payload = jwt.verify(header.slice(7), process.env.JWT_SECRET)
-      const user = db.prepare('SELECT id, name, email, phone, role, active FROM users WHERE id = ?').get(payload.id)
-      if (!user || !user.active) return res.status(401).json({ error: 'Compte désactivé' })
-      res.json(user)
-    } catch {
-      return res.status(401).json({ error: 'Token invalide' })
-    }
+
+    res.json({
+      ...user,
+      permissions: permissions,
+      isAdmin: user.role === 'admin'
+    })
   })
 
   return router

@@ -1,4 +1,4 @@
-import express from 'express'
+﻿import express from 'express'
 import cors from 'cors'
 import Database from 'better-sqlite3'
 import bcrypt from 'bcryptjs'
@@ -26,6 +26,10 @@ import { initCmdbTables, createCmdbRouter } from './cmdb.js'
 import { createPortalRouter } from './portal.js'
 import { initProblemTables, createProblemRouter } from './problems.js'
 import { initSupplierTables, createSupplierRouter } from './suppliers.js'
+import { initRiskTables, createRiskRouter } from './risks.js'
+import { initFacilityTables, createFacilityRouter } from './facility.js'
+import { initResourceTables, createResourceRouter, startResourcesCron } from './resources.js'
+import { initPatientTables, createPatientRouter } from './patients.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -43,13 +47,21 @@ db.exec(`
     email TEXT UNIQUE NOT NULL,
     phone TEXT,
     password_hash TEXT,
-    role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'technicien', 'user')),
+    role TEXT NOT NULL DEFAULT 'user',
     active INTEGER NOT NULL DEFAULT 1,
     otp_code TEXT,
     otp_expires_at TEXT,
     created_at TEXT DEFAULT (datetime('now', 'localtime'))
   )
 `)
+
+// === MIGRATION : AJOUT D'UN RÃ”LE PERSONNALISÃ‰ (SANS TOUCHER Ã€ LA TABLE EXISTANTE) ===
+const userColumns = db.prepare("PRAGMA table_info(users)").all().map(c => c.name)
+
+if (!userColumns.includes('custom_role')) {
+  db.exec("ALTER TABLE users ADD COLUMN custom_role TEXT")
+  console.log('ðŸ”§ Migration : colonne custom_role ajoutÃ©e')
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS modules (
@@ -176,52 +188,99 @@ db.exec(`
   )
 `)
 
-// Table des préférences de notification par utilisateur
+// ==================== TABLES RÃ”LES DYNAMIQUES ====================
+
 db.exec(`
-  CREATE TABLE IF NOT EXISTS user_notifications_preferences (
+  CREATE TABLE IF NOT EXISTS roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL UNIQUE,
-    notify_ticket_assigned INTEGER NOT NULL DEFAULT 1,
-    notify_status_changed INTEGER NOT NULL DEFAULT 1,
-    notify_new_comment INTEGER NOT NULL DEFAULT 1,
-    notify_sla_exceeded INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT DEFAULT (datetime('now', 'localtime')),
-    updated_at TEXT,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  )
+    name TEXT UNIQUE NOT NULL,
+    description TEXT
+  );
+  
+  CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id INTEGER NOT NULL,
+    permission_code TEXT NOT NULL,
+    PRIMARY KEY (role_id, permission_code),
+    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+    FOREIGN KEY (permission_code) REFERENCES permissions(code) ON DELETE CASCADE
+  );
 `)
 
-// ==================== MIGRATIONS ====================
+// CrÃ©er les rÃ´les par dÃ©faut s'ils n'existent pas
+const rolesCount = db.prepare('SELECT COUNT(*) as c FROM roles').get().c
+if (rolesCount === 0) {
+  const defaultRoles = [
+    ['Admin', 'AccÃ¨s complet Ã  toutes les fonctionnalitÃ©s'],
+    ['Technicien', 'AccÃ¨s Ã  la gestion des tickets et des assets'],
+    ['Utilisateur', 'AccÃ¨s basique au portail et Ã  ses tickets']
+  ]
+  const insertRole = db.prepare('INSERT INTO roles (name, description) VALUES (?, ?)')
+  for (const r of defaultRoles) insertRole.run(...r)
+  console.log('âœ… RÃ´les par dÃ©faut crÃ©Ã©s')
+}
+
+// ==================== TABLES RÃ”LES DYNAMIQUES ====================
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS roles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT
+  );
+  
+  CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id INTEGER NOT NULL,
+    permission_code TEXT NOT NULL,
+    PRIMARY KEY (role_id, permission_code),
+    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
+    FOREIGN KEY (permission_code) REFERENCES permissions(code) ON DELETE CASCADE
+  );
+`)
 
 const ticketColumns = db.prepare("PRAGMA table_info(tickets)").all().map(c => c.name)
 
 if (!ticketColumns.includes('created_by')) {
   db.exec('ALTER TABLE tickets ADD COLUMN created_by INTEGER REFERENCES users(id) ON DELETE SET NULL')
-  console.log('🔧 Migration : colonne created_by ajoutée')
+  console.log('ðŸ”§ Migration : colonne created_by ajoutÃ©e')
 }
 
 if (!ticketColumns.includes('module_id')) {
   db.exec('ALTER TABLE tickets ADD COLUMN module_id INTEGER REFERENCES modules(id) ON DELETE SET NULL')
-  console.log('🔧 Migration : colonne module_id ajoutée')
+  console.log('ðŸ”§ Migration : colonne module_id ajoutÃ©e')
 }
 
 if (!ticketColumns.includes('asset_id')) {
   db.exec('ALTER TABLE tickets ADD COLUMN asset_id INTEGER REFERENCES assets(id) ON DELETE SET NULL')
-  console.log('🔧 Migration : colonne asset_id ajoutée')
+  console.log('ðŸ”§ Migration : colonne asset_id ajoutÃ©e')
 }
 
 if (!ticketColumns.includes('archived')) {
   db.exec('ALTER TABLE tickets ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
-  console.log('🔧 Migration : colonne archived ajoutée')
+  console.log('ðŸ”§ Migration : colonne archived ajoutÃ©e')
 }
 
 if (!ticketColumns.includes('archived_at')) {
   db.exec('ALTER TABLE tickets ADD COLUMN archived_at TEXT')
-  console.log('🔧 Migration : colonne archived_at ajoutée')
+  console.log('ðŸ”§ Migration : colonne archived_at ajoutÃ©e')
 }
 
 // Initialiser les tables SLA
 initSlaTables(db)
+
+// Migration : ajout du numÃ©ro d'identification unique (asset_tag)
+if (!ticketColumns.includes('asset_tag')) {
+  // On ajoute la colonne sur la table ASSETS (attention, on utilise assets, pas tickets)
+}
+// Il faut d'abord rÃ©cupÃ©rer les colonnes de la table assets
+const assetColumns = db.prepare("PRAGMA table_info(assets)").all().map(c => c.name)
+if (!assetColumns.includes('asset_tag')) {
+  db.exec('ALTER TABLE assets ADD COLUMN asset_tag TEXT')
+  console.log('ðŸ”§ Migration : colonne asset_tag ajoutÃ©e')
+}
+if (!assetColumns.includes('room_id')) {
+  db.exec('ALTER TABLE assets ADD COLUMN room_id INTEGER REFERENCES rooms(id) ON DELETE SET NULL')
+  console.log('ðŸ”§ Migration : colonne room_id ajoutÃ©e Ã  la table assets')
+}
 
 // ==================== MIGRATIONS INCIDENTS (DORA/BAIT) ====================
 
@@ -229,22 +288,22 @@ const ticketColumnsIncidents = db.prepare("PRAGMA table_info(tickets)").all().ma
 
 if (!ticketColumnsIncidents.includes('incident_type')) {
   db.exec("ALTER TABLE tickets ADD COLUMN incident_type TEXT NOT NULL DEFAULT 'standard'")
-  console.log('🔧 Migration Incidents : colonne incident_type ajoutée')
+  console.log('ðŸ”§ Migration Incidents : colonne incident_type ajoutÃ©e')
 }
 
 if (!ticketColumnsIncidents.includes('is_dora_major')) {
   db.exec('ALTER TABLE tickets ADD COLUMN is_dora_major INTEGER NOT NULL DEFAULT 0')
-  console.log('🔧 Migration Incidents : colonne is_dora_major ajoutée')
+  console.log('ðŸ”§ Migration Incidents : colonne is_dora_major ajoutÃ©e')
 }
 
 if (!ticketColumnsIncidents.includes('dora_criteria')) {
   db.exec('ALTER TABLE tickets ADD COLUMN dora_criteria TEXT')
-  console.log('🔧 Migration Incidents : colonne dora_criteria ajoutée')
+  console.log('ðŸ”§ Migration Incidents : colonne dora_criteria ajoutÃ©e')
 }
 
 if (!ticketColumnsIncidents.includes('dora_notification_date')) {
   db.exec('ALTER TABLE tickets ADD COLUMN dora_notification_date TEXT')
-  console.log('🔧 Migration Incidents : colonne dora_notification_date ajoutée')
+  console.log('ðŸ”§ Migration Incidents : colonne dora_notification_date ajoutÃ©e')
 }
 
 // ==================== MIGRATIONS LOGS (NIST AU-6) ====================
@@ -253,17 +312,17 @@ const logColumns = db.prepare('PRAGMA table_info(logs)').all().map(c => c.name)
 
 if (!logColumns.includes('reviewed')) {
   db.exec('ALTER TABLE logs ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0')
-  console.log('🔧 Migration Logs : colonne reviewed ajoutée')
+  console.log('ðŸ”§ Migration Logs : colonne reviewed ajoutÃ©e')
 }
 
 if (!logColumns.includes('reviewed_by')) {
   db.exec('ALTER TABLE logs ADD COLUMN reviewed_by TEXT')
-  console.log('🔧 Migration Logs : colonne reviewed_by ajoutée')
+  console.log('ðŸ”§ Migration Logs : colonne reviewed_by ajoutÃ©e')
 }
 
 if (!logColumns.includes('reviewed_at')) {
   db.exec('ALTER TABLE logs ADD COLUMN reviewed_at TEXT')
-  console.log('🔧 Migration Logs : colonne reviewed_at ajoutée')
+  console.log('ðŸ”§ Migration Logs : colonne reviewed_at ajoutÃ©e')
 }
 
 // Initialiser les tables Knowledge Base
@@ -275,25 +334,39 @@ initGdprTables(db)
 // Initialiser les tables CMDB
 initCmdbTables(db)
 
-// Initialiser les tables Problèmes
+// Initialiser les tables ProblÃ¨mes
 initProblemTables(db)
+
+// Initialiser les tables Risk
+initRiskTables(db)
+
+// Initialiser les tables FacilityTables
+initFacilityTables(db)
+
+// Initialiser les tables Resource
+initResourceTables(db)
+
+// Initialiser les tables Patients
+initPatientTables(db)
 
 // ==================== SEED : Permissions ====================
 
 const permsCount = db.prepare('SELECT COUNT(*) as c FROM permissions').get().c
 if (permsCount === 0) {
   const defaultPerms = [
-    ['kb.read', 'Lire la base de connaissances', 'kb', 'Accès à la base de connaissances'],
-    ['kb.write', 'Créer/modifier des articles', 'kb', 'Peut écrire et modifier des articles'],
+    ['kb.read', 'Lire la base de connaissances', 'kb', 'AccÃ¨s Ã  la base de connaissances'],
+    ['kb.write', 'CrÃ©er/modifier des articles', 'kb', 'Peut Ã©crire et modifier des articles'],
     ['kb.publish', 'Publier des articles', 'kb', 'Peut publier directement (sans validation)'],
-    ['assets.write', 'Modifier les assets', 'assets', 'Peut créer/modifier les équipements'],
-    ['users.manage', 'Gérer les utilisateurs', 'users', 'Peut gérer les comptes utilisateurs'],
-    ['logs.view', 'Voir les logs', 'logs', 'Peut consulter le journal d\'activité'],
+    ['assets.write', 'Modifier les assets', 'assets', 'Peut crÃ©er/modifier les Ã©quipements'],
+    ['users.manage', 'GÃ©rer les utilisateurs', 'users', 'Peut gÃ©rer les comptes utilisateurs'],
+    ['logs.view', 'Voir les logs', 'logs', 'Peut consulter le journal d\'activitÃ©'],
     ['tickets.all', 'Voir tous les tickets', 'tickets', 'Peut voir tous les tickets'],
+    ['medical.read', 'Voir les donnÃ©es patients', 'medical', 'Peut voir et saisir les informations mÃ©dicales (patients)'],
   ]
+
   const insert = db.prepare('INSERT INTO permissions (code, label, module, description) VALUES (?, ?, ?, ?)')
   for (const p of defaultPerms) insert.run(...p)
-  console.log('✅ Permissions par défaut créées')
+  console.log('âœ… Permissions par dÃ©faut crÃ©Ã©es')
 }
 
 // ==================== HELPERS ====================
@@ -302,7 +375,7 @@ function logAction(userId, userName, action, entity, entityId, details) {
   db.prepare(`
     INSERT INTO logs (user_id, user_name, action, entity, entity_id, details)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(userId || null, userName || 'Système', action, entity, entityId || null, details || null)
+  `).run(userId || null, userName || 'SystÃ¨me', action, entity, entityId || null, details || null)
 }
 
 // ==================== SEED : Admin & Modules ====================
@@ -314,21 +387,21 @@ if (!adminExists) {
     INSERT INTO users (name, email, phone, password_hash, role)
     VALUES (?, ?, ?, ?, 'admin')
   `).run('Administrateur', 'admin@healthticket.local', '+237600000000', hash)
-  console.log('✅ Admin par défaut créé : admin@healthticket.local / admin123')
+  console.log('âœ… Admin par dÃ©faut crÃ©Ã© : admin@healthticket.local / admin123')
 }
 
 const modulesExist = db.prepare('SELECT COUNT(*) as c FROM modules').get().c
 if (modulesExist === 0) {
   const defaultModules = [
-    ['Informatique', 'Tickets liés à l\'informatique', 'Monitor', 'blue'],
-    ['Équipement médical', 'Tickets liés au matériel médical', 'HeartPulse', 'red'],
+    ['Informatique', 'Tickets liÃ©s Ã  l\'informatique', 'Monitor', 'blue'],
+    ['Ã‰quipement mÃ©dical', 'Tickets liÃ©s au matÃ©riel mÃ©dical', 'HeartPulse', 'red'],
     ['Administratif', 'Tickets administratifs', 'FileText', 'slate'],
-    ['Infrastructure', 'Tickets liés au bâtiment, réseau, électricité', 'Building2', 'amber'],
+    ['Infrastructure', 'Tickets liÃ©s au bÃ¢timent, rÃ©seau, Ã©lectricitÃ©', 'Building2', 'amber'],
     ['Autre', 'Tickets divers', 'Box', 'slate'],
   ]
   const insert = db.prepare('INSERT INTO modules (name, description, icon, color) VALUES (?, ?, ?, ?)')
   for (const m of defaultModules) insert.run(...m)
-  console.log('✅ Modules par défaut créés')
+  console.log('âœ… Modules par dÃ©faut crÃ©Ã©s')
 }
 
 // ==================== ROUTES : AUTH & ADMIN ====================
@@ -345,8 +418,12 @@ app.use('/api/problems', createProblemRouter(db, logAction))
 app.use('/api/catalog', createCatalogRouter(db, logAction))
 app.use('/api/changes', createChangeRouter(db, logAction))
 app.use('/api/suppliers', createSupplierRouter(db, logAction))
+app.use('/api/risks', createRiskRouter(db, logAction))
+app.use('/api/facility', createFacilityRouter(db, logAction))
+app.use('/api/resources', createResourceRouter(db, logAction))
+app.use('/api/patients', createPatientRouter(db, logAction))
 
-// ==================== ROUTES : PRÉFÉRENCES NOTIFICATIONS ====================
+// ==================== ROUTES : PRÃ‰FÃ‰RENCES NOTIFICATIONS ====================
 
 // Initialiser le catalogue
 initCatalogTables(db)
@@ -365,7 +442,7 @@ app.get('/api/notifications/preferences', authRequired, (req, res) => {
 app.patch('/api/notifications/preferences', authRequired, (req, res) => {
   try {
     const updated = updatePreferences(db, req.user.id, req.body)
-    logAction(req.user.id, req.user.name, 'update', 'notification_prefs', req.user.id, 'Préférences mises à jour')
+    logAction(req.user.id, req.user.name, 'update', 'notification_prefs', req.user.id, 'PrÃ©fÃ©rences mises Ã  jour')
     res.json(updated)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -416,7 +493,7 @@ app.get('/api/tickets', authRequired, (req, res) => {
 
   const tickets = db.prepare(query).all(...params)
 
-  // Enrichir avec l'état SLA
+  // Enrichir avec l'Ã©tat SLA
 for (const t of tickets) {
   t.sla_status = computeSlaStatus(t)
   t.description = decrypt(t.description)
@@ -446,14 +523,14 @@ app.get('/api/tickets/:id', authRequired, (req, res) => {
     WHERE t.id = ?
   `).get(req.params.id)
 
-  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
+  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvÃ©' })
 
   if (req.user.role !== 'admin') {
     const canAccess = ticket.created_by === req.user.id || ticket.assignee === req.user.email
-    if (!canAccess) return res.status(403).json({ error: 'Accès refusé à ce ticket' })
+    if (!canAccess) return res.status(403).json({ error: 'AccÃ¨s refusÃ© Ã  ce ticket' })
   }
 
-// Déchiffrer la description
+// DÃ©chiffrer la description
 ticket.description = decrypt(ticket.description)
 
 ticket.sla_status = computeSlaStatus(ticket)
@@ -464,7 +541,7 @@ res.json(ticket)
 app.post('/api/tickets', authRequired, (req, res) => {
   const { title, category, priority, description, asset_id } = req.body
   if (!title || !category || !priority) {
-    return res.status(400).json({ error: 'Titre, catégorie et priorité sont obligatoires' })
+    return res.status(400).json({ error: 'Titre, catÃ©gorie et prioritÃ© sont obligatoires' })
   }
 
   if (asset_id) {
@@ -490,7 +567,7 @@ const result = db.prepare(`
   `).get(result.lastInsertRowid)
 
   newTicket.sla_status = computeSlaStatus(newTicket)
-  logAction(req.user.id, req.user.name, 'create', 'ticket', newTicket.id, `Ticket créé : ${newTicket.title}`)
+  logAction(req.user.id, req.user.name, 'create', 'ticket', newTicket.id, `Ticket crÃ©Ã© : ${newTicket.title}`)
   res.status(201).json(newTicket)
 })
 
@@ -500,7 +577,7 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
   const targetId = parseInt(req.params.id)
 
   const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(targetId)
-  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
+  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvÃ©' })
 
   if (assignee !== undefined && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Seuls les admins peuvent assigner un ticket' })
@@ -508,7 +585,7 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
 
   if (assignee) {
     const targetUser = db.prepare('SELECT email FROM users WHERE email = ?').get(assignee)
-    if (!targetUser) return res.status(400).json({ error: 'Utilisateur assigné introuvable' })
+    if (!targetUser) return res.status(400).json({ error: 'Utilisateur assignÃ© introuvable' })
   }
 
   if (incident_type && !['standard', 'security', 'major'].includes(incident_type)) {
@@ -550,7 +627,7 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
       resumeSla(db, targetId)
     }
 
-    if (status === 'Résolu') {
+    if (status === 'RÃ©solu') {
       db.prepare('UPDATE tickets SET resolved_at = datetime(\'now\', \'localtime\') WHERE id = ?').run(targetId)
     }
   }
@@ -566,7 +643,7 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
 
   const actionDetails = []
   if (status) actionDetails.push(`Statut : ${updated.status}`)
-  if (assignee !== undefined) actionDetails.push(`Assigné à : ${updated.assignee || 'Personne'}`)
+  if (assignee !== undefined) actionDetails.push(`AssignÃ© Ã  : ${updated.assignee || 'Personne'}`)
   if (incident_type) actionDetails.push(`Type : ${updated.incident_type}`)
   if (is_dora_major !== undefined) actionDetails.push(`DORA majeur : ${updated.is_dora_major ? 'oui' : 'non'}`)
 
@@ -596,13 +673,13 @@ res.json(updated)
 // ---- POST /api/tickets/:id/archive ----
 app.post('/api/tickets/:id/archive', authRequired, adminOnly, (req, res) => {
   const ticket = db.prepare('SELECT id FROM tickets WHERE id = ?').get(req.params.id)
-  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
+  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvÃ©' })
 
   db.prepare(`
     UPDATE tickets SET archived = 1, archived_at = datetime('now', 'localtime') WHERE id = ?
   `).run(req.params.id)
 
-  logAction(req.user.id, req.user.name, 'archive', 'ticket', req.params.id, 'Ticket archivé')
+  logAction(req.user.id, req.user.name, 'archive', 'ticket', req.params.id, 'Ticket archivÃ©')
   res.json({ success: true })
 })
 
@@ -611,11 +688,11 @@ app.post('/api/tickets/:id/archive', authRequired, adminOnly, (req, res) => {
 // ---- GET /api/tickets/:id/comments ----
 app.get('/api/tickets/:id/comments', authRequired, (req, res) => {
   const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(req.params.id)
-  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
+  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvÃ©' })
 
   if (req.user.role !== 'admin') {
     const canAccess = ticket.created_by === req.user.id || ticket.assignee === req.user.email
-    if (!canAccess) return res.status(403).json({ error: 'Accès refusé à ce ticket' })
+    if (!canAccess) return res.status(403).json({ error: 'AccÃ¨s refusÃ© Ã  ce ticket' })
   }
 
   const comments = db.prepare(
@@ -632,11 +709,11 @@ app.post('/api/tickets/:id/comments', authRequired, async (req, res) => {
   }
 
   const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(req.params.id)
-  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
+  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvÃ©' })
 
   if (req.user.role !== 'admin') {
     const canAccess = ticket.created_by === req.user.id || ticket.assignee === req.user.email
-    if (!canAccess) return res.status(403).json({ error: 'Accès refusé à ce ticket' })
+    if (!canAccess) return res.status(403).json({ error: 'AccÃ¨s refusÃ© Ã  ce ticket' })
   }
 
   const result = db.prepare(`
@@ -690,7 +767,7 @@ app.get('/api/assets', authRequired, (req, res) => {
 })
 
 // ---- GET /api/assets/full ----
-// Liste enrichie des assets avec infos CI associés
+// Liste enrichie des assets avec infos CI associÃ©s
 app.get('/api/assets/full', authRequired, (req, res) => {
   const { type, search } = req.query
 
@@ -743,16 +820,253 @@ app.get('/api/assets/:id', authRequired, (req, res) => {
     WHERE id = ?
   `).get(req.params.id)
 
-  if (!asset) return res.status(404).json({ error: 'Asset non trouvé' })
+  if (!asset) return res.status(404).json({ error: 'Asset non trouvÃ©' })
   res.json(asset)
 })
 
+// ==================== ROUTES : STATISTIQUES (DASHBOARD CAPACITÃ‰) ====================
 
-// ==================== DÉMARRAGE ====================
+app.get('/api/stats/capacity', authRequired, adminOnly, (req, res) => {
+  try {
+    // 1. Charge par technicien (nombre de tickets assignÃ©s)
+    const workload = db.prepare(`
+      SELECT assignee, COUNT(*) as ticket_count 
+      FROM tickets 
+      WHERE archived = 0 AND assignee != '-' AND assignee IS NOT NULL
+      GROUP BY assignee
+      ORDER BY ticket_count DESC
+    `).all()
+
+    // 2. RÃ©partition par statut
+    const byStatus = db.prepare(`
+      SELECT status, COUNT(*) as count 
+      FROM tickets 
+      WHERE archived = 0
+      GROUP BY status
+    `).all()
+
+    // 3. RÃ©partition par prioritÃ©
+    const byPriority = db.prepare(`
+      SELECT priority, COUNT(*) as count 
+      FROM tickets 
+      WHERE archived = 0
+      GROUP BY priority
+    `).all()
+
+    // 4. Tickets rÃ©solus (pour calcul MTTR et SLA)
+        const resolvedTickets = db.prepare(`
+      SELECT id, priority, status, created_at, resolved_at 
+      FROM tickets 
+      WHERE status = 'RÃ©solu' AND archived = 0 AND resolved_at IS NOT NULL
+    `).all()
+
+    // Calcul du MTTR (en heures)
+    let totalHours = 0
+    let validCount = 0
+    for (const t of resolvedTickets) {
+      const created = new Date(t.created_at).getTime()
+      const resolved = new Date(t.resolved_at).getTime()
+      if (resolved > created) {
+        totalHours += (resolved - created) / (1000 * 60 * 60)
+        validCount++
+      }
+    }
+    const mttr = validCount > 0 ? (totalHours / validCount).toFixed(1) : 0
+
+    // ConformitÃ© SLA (simplifiÃ©e sur la base des tickets rÃ©solus)
+    const totalTickets = db.prepare('SELECT COUNT(*) as c FROM tickets WHERE archived = 0').get().c
+        // Calcul de la conformitÃ© SLA (on rÃ©cupÃ¨re les tickets et on calcule le statut)
+    const allActiveTickets = db.prepare("SELECT * FROM tickets WHERE archived = 0").all()
+    let exceededSla = 0
+    for (const t of allActiveTickets) {
+      if (computeSlaStatus(t) === 'dÃ©passÃ©') {
+        exceededSla++
+      }
+    }
+    const slaCompliance = totalTickets > 0 ? (((totalTickets - exceededSla) / totalTickets) * 100).toFixed(1) : 100
+
+    res.json({
+      workload,
+      byStatus,
+      byPriority,
+      mttr: parseFloat(mttr),
+      slaCompliance: parseFloat(slaCompliance),
+      totalTickets
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ==================== ROUTES : STATISTIQUES (DASHBOARD CAPACITÃ‰) ====================
+
+app.get('/api/stats/capacity', authRequired, adminOnly, (req, res) => {
+  try {
+    const workload = db.prepare(`
+      SELECT assignee, COUNT(*) as ticket_count 
+      FROM tickets 
+      WHERE archived = 0 AND assignee != '-' AND assignee IS NOT NULL
+      GROUP BY assignee
+      ORDER BY ticket_count DESC
+    `).all()
+
+    const byStatus = db.prepare(`
+      SELECT status, COUNT(*) as count 
+      FROM tickets 
+      WHERE archived = 0
+      GROUP BY status
+    `).all()
+
+    const byPriority = db.prepare(`
+      SELECT priority, COUNT(*) as count 
+      FROM tickets 
+      WHERE archived = 0
+      GROUP BY priority
+    `).all()
+
+    const resolvedTickets = db.prepare(`
+      SELECT id, priority, status, created_at, resolved_at 
+      FROM tickets 
+      WHERE status = 'RÃ©solu' AND archived = 0 AND resolved_at IS NOT NULL
+    `).all()
+
+    let totalHours = 0
+    let validCount = 0
+    for (const t of resolvedTickets) {
+      const created = new Date(t.created_at).getTime()
+      const resolved = new Date(t.resolved_at).getTime()
+      if (resolved > created) {
+        totalHours += (resolved - created) / (1000 * 60 * 60)
+        validCount++
+      }
+    }
+    const mttr = validCount > 0 ? (totalHours / validCount).toFixed(1) : 0
+
+    // Calcul de la conformitÃ© SLA (SANS requÃªte SQL sur sla_status)
+    const allActiveTickets = db.prepare("SELECT * FROM tickets WHERE archived = 0").all()
+    let exceededSla = 0
+    for (const t of allActiveTickets) {
+      if (computeSlaStatus(t) === 'dÃ©passÃ©') {
+        exceededSla++
+      }
+    }
+
+    const totalTickets = allActiveTickets.length
+    const slaCompliance = totalTickets > 0 ? (((totalTickets - exceededSla) / totalTickets) * 100).toFixed(1) : 100
+
+    res.json({
+      workload,
+      byStatus,
+      byPriority,
+      mttr: parseFloat(mttr),
+      slaCompliance: parseFloat(slaCompliance),
+      totalTickets
+    })
+  } catch (err) {
+    console.error("Erreur API CapacitÃ©:", err)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+
+// ==================== ROUTES : RÃ”LES DYNAMIQUES ====================
+
+app.get('/api/admin/roles', authRequired, adminOnly, (req, res) => {
+  const roles = db.prepare(`
+    SELECT r.*, 
+    (SELECT COUNT(*) FROM users u WHERE u.role = r.name) as user_count,
+    (SELECT COUNT(*) FROM role_permissions rp WHERE rp.role_id = r.id) as perm_count
+    FROM roles r ORDER BY r.name ASC
+  `).all()
+  res.json(roles)
+})
+
+app.post('/api/admin/roles', authRequired, adminOnly, (req, res) => {
+  const { name, description } = req.body
+  try {
+    const result = db.prepare('INSERT INTO roles (name, description) VALUES (?, ?)').run(name, description)
+    logAction(req.user.id, req.user.name, 'create', 'role', result.lastInsertRowid, `RÃ´le crÃ©Ã© : ${name}`)
+    res.status(201).json({ success: true, id: result.lastInsertRowid })
+  } catch (err) {
+    res.status(400).json({ error: 'Ce rÃ´le existe dÃ©jÃ ' })
+  }
+})
+
+app.get('/api/admin/roles/:id/permissions', authRequired, adminOnly, (req, res) => {
+  const perms = db.prepare('SELECT permission_code FROM role_permissions WHERE role_id = ?').all(req.params.id)
+  res.json(perms.map(p => p.permission_code))
+})
+
+app.post('/api/admin/roles/:id/permissions', authRequired, adminOnly, (req, res) => {
+  const { permission_code } = req.body
+  try {
+    db.prepare('INSERT INTO role_permissions (role_id, permission_code) VALUES (?, ?)').run(req.params.id, permission_code)
+    res.json({ success: true })
+  } catch (err) {
+    res.status(400).json({ error: 'Permission dÃ©jÃ  accordÃ©e' })
+  }
+})
+
+app.delete('/api/admin/roles/:id/permissions/:code', authRequired, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM role_permissions WHERE role_id = ? AND permission_code = ?').run(req.params.id, req.params.code)
+  res.json({ success: true })
+})
+
+// ==================== ROUTES : RÔLES DYNAMIQUES ====================
+
+// GET /api/admin/roles
+app.get('/api/admin/roles', authRequired, adminOnly, (req, res) => {
+  const roles = db.prepare(`
+    SELECT r.*, 
+    (SELECT COUNT(*) FROM users u WHERE u.custom_role = r.name) as user_count,
+    (SELECT COUNT(*) FROM role_permissions rp WHERE rp.role_id = r.id) as perm_count
+    FROM roles r ORDER BY r.name ASC
+  `).all()
+  res.json(roles)
+})
+
+// POST /api/admin/roles
+app.post('/api/admin/roles', authRequired, adminOnly, (req, res) => {
+  const { name, description } = req.body
+  if (!name) return res.status(400).json({ error: 'Le nom est obligatoire' })
+  try {
+    const result = db.prepare('INSERT INTO roles (name, description) VALUES (?, ?)').run(name, description || null)
+    logAction(req.user.id, req.user.name, 'create', 'role', result.lastInsertRowid, `Rôle créé : ${name}`)
+    res.status(201).json({ success: true, id: result.lastInsertRowid })
+  } catch (err) {
+    if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce rôle existe déjà' })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// GET /api/admin/roles/:id/permissions
+app.get('/api/admin/roles/:id/permissions', authRequired, adminOnly, (req, res) => {
+  const perms = db.prepare('SELECT permission_code FROM role_permissions WHERE role_id = ?').all(req.params.id)
+  res.json(perms.map(p => p.permission_code))
+})
+
+// POST /api/admin/roles/:id/permissions
+app.post('/api/admin/roles/:id/permissions', authRequired, adminOnly, (req, res) => {
+  const { permission_code } = req.body
+  try {
+    db.prepare('INSERT INTO role_permissions (role_id, permission_code) VALUES (?, ?)').run(req.params.id, permission_code)
+    res.json({ success: true })
+  } catch (err) {
+    res.status(400).json({ error: 'Permission déjà accordée' })
+  }
+})
+
+// DELETE /api/admin/roles/:id/permissions/:code
+app.delete('/api/admin/roles/:id/permissions/:code', authRequired, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM role_permissions WHERE role_id = ? AND permission_code = ?').run(req.params.id, req.params.code)
+  res.json({ success: true })
+})
+
+// ==================== DÃ‰MARRAGE ====================
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, async () => {
-  console.log(`Serveur backend démarré sur http://localhost:${PORT}`)
+  console.log(`Serveur backend dÃ©marrÃ© sur http://localhost:${PORT}`)
   await testEmailConnection()
 
   try {
@@ -764,6 +1078,21 @@ app.listen(PORT, async () => {
   try {
     startSlaCron(db, logAction)
   } catch (err) {
-    console.error('Erreur démarrage cron SLA :', err)
+    console.error('Erreur dÃ©marrage cron SLA :', err)
+  }
+
+  try {
+    startSlaCron(db, logAction)
+  } catch (err) {
+    console.error('Erreur dÃ©marrage cron SLA :', err)
+  }
+
+  // AJOUTE CES LIGNES :
+  try {
+    startResourcesCron(db, logAction)
+  } catch (err) {
+    console.error('Erreur dÃ©marrage cron Ressources :', err)
   }
 })
+
+

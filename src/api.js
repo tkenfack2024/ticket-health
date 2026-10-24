@@ -233,7 +233,28 @@ adminGetAssets: (params = {}) => {
     method: 'POST',
     body: JSON.stringify({ permission_code: code }),
   }),
+
+    adminCreatePermission: (data) => request('/api/admin/permissions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
   adminRevokePermission: (userId, code) => request(`/api/admin/users/${userId}/permissions/${code}`, {
+    method: 'DELETE',
+  }),
+
+  // --- RÔLES DYNAMIQUES ---
+  adminGetRoles: () => request('/api/admin/roles'),
+  adminCreateRole: (data) => request('/api/admin/roles', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  adminGetRolePermissions: (id) => request(`/api/admin/roles/${id}/permissions`),
+  adminAddRolePermission: (id, code) => request(`/api/admin/roles/${id}/permissions`, {
+    method: 'POST',
+    body: JSON.stringify({ permission_code: code }),
+  }),
+  adminRemoveRolePermission: (id, code) => request(`/api/admin/roles/${id}/permissions/${code}`, {
     method: 'DELETE',
   }),
 
@@ -504,5 +525,139 @@ adminGetAssets: (params = {}) => {
     const token = localStorage.getItem('ht_token')
     return `${API_URL}/api/suppliers/files/${fileId}/download?token=${token}`
   },
+
+  // Risques (ISO 27001)
+  risksGetAll: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/risks${qs ? '?' + qs : ''}`)
+  },
+  risksCreate: (data) => request('/api/risks', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  risksUpdate: (id, data) => request(`/api/risks/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  risksDelete: (id) => request(`/api/risks/${id}`, { method: 'DELETE' }),
+
+  // Facility (Bâtiments & Salles)
+  facilityGetTree: () => request('/api/facility/tree'),
+  facilityCreateSite: (data) => request('/api/facility/sites', { method: 'POST', body: JSON.stringify(data) }),
+  facilityCreateFloor: (data) => request('/api/facility/floors', { method: 'POST', body: JSON.stringify(data) }),
+  facilityCreateRoom: (data) => request('/api/facility/rooms', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Ressources Physiques (Lits / Tables)
+  resourcesGetAll: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/resources${qs ? '?' + qs : ''}`)
+  },
+  resourcesCreate: (data) => request('/api/resources', { method: 'POST', body: JSON.stringify(data) }),
+  resourcesUpdate: (id, data) => request(`/api/resources/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  resourcesDelete: (id) => request(`/api/resources/${id}`, { method: 'DELETE' }),
+
+  // Réservations (Desksharing)
+  resourcesGetBookings: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/resources/bookings${qs ? '?' + qs : ''}`)
+  },
+  resourcesBook: (id, data) => request(`/api/resources/${id}/book`, { method: 'POST', body: JSON.stringify(data) }),
+  resourcesCancelBooking: (bookingId) => request(`/api/resources/bookings/${bookingId}`, { method: 'DELETE' }),
+
+
+  // Patients (DPI)
+  patientsGetAll: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/patients${qs ? '?' + qs : ''}`)
+  },
+  patientsCreate: (data) => request('/api/patients', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+    patientsUpdate: (id, data) => request(`/api/patients/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+
+  // Visites (Triage)
+  visitsGetAll: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/patients/visits${qs ? '?' + qs : ''}`)
+  },
+  visitsCreate: (patientId, data) => request(`/api/patients/${patientId}/visit`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  visitsStart: (visitId) => request(`/api/patients/visits/${visitId}/start`, {
+    method: 'POST',
+  }),
+
+  // Ordonnances & Examens
+  prescriptionsGet: (recordId) => request(`/api/patients/records/${recordId}/prescriptions`),
+  prescriptionsCreate: (recordId, data) => request(`/api/patients/records/${recordId}/prescriptions`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  examsGet: (patientId) => request(`/api/patients/${patientId}/exams`),
+  examsCreate: (recordId, data) => request(`/api/patients/records/${recordId}/exams`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+    examsUpdate: async (examId, data, file) => {
+    const token = localStorage.getItem('ht_token')
+    const formData = new FormData()
+    if (data.status) formData.append('status', data.status)
+    if (data.result_notes) formData.append('result_notes', data.result_notes)
+    if (file) formData.append('file', file)
+
+    const res = await fetch(`${API_URL}/api/patients/exams/${examId}`, {
+      method: 'PATCH',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    })
+    if (!res.ok) throw new Error('Erreur lors de l\'upload')
+    return res.json()
+  },
+
+	  examsDownloadUrl: (examId) => {
+    const token = localStorage.getItem('ht_token')
+    return `${API_URL}/api/patients/exams/${examId}/download?token=${token}`
+  },
+
+  // Dossier Médical
+  recordsGetAll: (patientId) => request(`/api/patients/${patientId}/records`),
+  recordsCreate: (patientId, data) => request(`/api/patients/${patientId}/records`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+
+  // Suivi
+  prescriptionsGetPending: () => request('/api/patients/prescriptions/pending'),
+  prescriptionsFinish: (id) => request(`/api/patients/prescriptions/${id}/finish`, { method: 'PATCH' }),
+  examsGetPending: () => request('/api/patients/exams/pending'),
+
+  // Statistiques de capacité
+  getCapacityStats: () => request('/api/stats/capacity')
 
 }

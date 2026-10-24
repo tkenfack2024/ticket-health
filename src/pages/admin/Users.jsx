@@ -3,26 +3,31 @@ import { Plus, UserX, UserCheck, KeyRound, Pencil, X, Loader2, Shield } from 'lu
 import { api } from '../../api'
 import { useAuth } from '../../context/AuthContext'
 
-const ROLE_LABELS = {
-  admin: { label: 'Admin', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
-  technicien: { label: 'Technicien', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  user: { label: 'Utilisateur', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-}
+const BASE_ROLES = [
+  { value: 'user', label: 'Utilisateur', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  { value: 'technicien', label: 'Technicien', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  { value: 'admin', label: 'Admin', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+]
 
 export default function AdminUsers() {
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState([])
+  const [roles, setRoles] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
   const [resettingUser, setResettingUser] = useState(null)
 
-  const loadUsers = async () => {
+  const loadData = async () => {
     try {
       setLoading(true)
-      const data = await api.adminGetUsers()
-      setUsers(data)
+      const [usersData, rolesData] = await Promise.all([
+        api.adminGetUsers(),
+        api.adminGetRoles(),
+      ])
+      setUsers(usersData)
+      setRoles(rolesData)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -31,7 +36,7 @@ export default function AdminUsers() {
     }
   }
 
-  useEffect(() => { loadUsers() }, [])
+  useEffect(() => { loadData() }, [])
 
   const handleToggleActive = async (u) => {
     if (u.id === currentUser.id) return
@@ -39,20 +44,25 @@ export default function AdminUsers() {
     try {
       if (u.active) await api.adminDeactivateUser(u.id)
       else await api.adminUpdateUser(u.id, { active: true })
-      loadUsers()
+      loadData()
     } catch (err) {
       alert(err.message)
     }
   }
 
-  const handleRoleChange = async (u, newRole) => {
-    if (u.id === currentUser.id) return
+  const handleCustomRoleChange = async (u, newRole) => {
     try {
-      await api.adminUpdateUser(u.id, { role: newRole })
-      loadUsers()
+      await api.adminUpdateUser(u.id, { custom_role: newRole || null })
+      loadData()
     } catch (err) {
       alert(err.message)
     }
+  }
+
+  const getRoleColor = (roleName) => {
+    const base = BASE_ROLES.find(r => r.value === roleName)
+    if (base) return base.color
+    return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
   }
 
   if (loading) return <div className="p-6 text-slate-500 dark:text-slate-400">Chargement...</div>
@@ -68,8 +78,7 @@ export default function AdminUsers() {
           onClick={() => setShowCreateModal(true)}
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
         >
-          <Plus size={16} />
-          Nouvel utilisateur
+          <Plus size={16} /> Nouvel utilisateur
         </button>
       </div>
 
@@ -85,7 +94,8 @@ export default function AdminUsers() {
             <tr>
               <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Nom</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Email</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Rôle</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Rôle de base</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Rôle métier</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Statut</th>
               <th className="text-right px-4 py-3 text-xs font-medium text-slate-500 dark:text-slate-300 uppercase">Actions</th>
             </tr>
@@ -108,19 +118,23 @@ export default function AdminUsers() {
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{u.email}</td>
                   <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${getRoleColor(u.role)}`}>{u.role}</span>
+                  </td>
+                  <td className="px-4 py-3">
                     {isSelf ? (
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${ROLE_LABELS[u.role].color}`}>
-                        {ROLE_LABELS[u.role].label}
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${u.custom_role ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {u.custom_role || '—'}
                       </span>
                     ) : (
                       <select
-                        value={u.role}
-                        onChange={(e) => handleRoleChange(u, e.target.value)}
+                        value={u.custom_role || ''}
+                        onChange={(e) => handleCustomRoleChange(u, e.target.value)}
                         className="text-xs px-2 py-1 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                       >
-                        <option value="user">Utilisateur</option>
-                        <option value="technicien">Technicien</option>
-                        <option value="admin">Admin</option>
+                        <option value="">— Aucun —</option>
+                        {roles.map(r => (
+                          <option key={r.id} value={r.name}>{r.name}</option>
+                        ))}
                       </select>
                     )}
                   </td>
@@ -171,10 +185,10 @@ export default function AdminUsers() {
       </div>
 
       {showCreateModal && (
-        <CreateUserModal onClose={() => setShowCreateModal(false)} onSuccess={() => { setShowCreateModal(false); loadUsers() }} />
+        <CreateUserModal roles={roles} onClose={() => setShowCreateModal(false)} onSuccess={() => { setShowCreateModal(false); loadData() }} />
       )}
       {editingUser && (
-        <EditUserModal user={editingUser} onClose={() => setEditingUser(null)} onSuccess={() => { setEditingUser(null); loadUsers() }} />
+        <EditUserModal user={editingUser} roles={roles} onClose={() => setEditingUser(null)} onSuccess={() => { setEditingUser(null); loadData() }} />
       )}
       {resettingUser && (
         <ResetPasswordModal user={resettingUser} onClose={() => setResettingUser(null)} onSuccess={() => setResettingUser(null)} />
@@ -183,8 +197,8 @@ export default function AdminUsers() {
   )
 }
 
-function CreateUserModal({ onClose, onSuccess }) {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', role: 'user' })
+function CreateUserModal({ roles, onClose, onSuccess }) {
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', role: 'user', custom_role: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -193,7 +207,7 @@ function CreateUserModal({ onClose, onSuccess }) {
     setLoading(true)
     setError(null)
     try {
-      await api.adminCreateUser(form)
+      await api.adminCreateUser({ ...form, custom_role: form.custom_role || null })
       onSuccess()
     } catch (err) {
       setError(err.message)
@@ -217,11 +231,19 @@ function CreateUserModal({ onClose, onSuccess }) {
         <Field label="Mot de passe *">
           <input type="text" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input-dark" />
         </Field>
-        <Field label="Rôle *">
+        <Field label="Rôle de base *">
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="input-dark">
             <option value="user">Utilisateur</option>
             <option value="technicien">Technicien</option>
             <option value="admin">Admin</option>
+          </select>
+        </Field>
+        <Field label="Rôle métier (optionnel)">
+          <select value={form.custom_role} onChange={(e) => setForm({ ...form, custom_role: e.target.value })} className="input-dark">
+            <option value="">— Aucun —</option>
+            {roles.map(r => (
+              <option key={r.id} value={r.name}>{r.name}</option>
+            ))}
           </select>
         </Field>
         <ModalButtons onCancel={onClose} loading={loading} submitLabel="Créer" />
@@ -230,8 +252,8 @@ function CreateUserModal({ onClose, onSuccess }) {
   )
 }
 
-function EditUserModal({ user, onClose, onSuccess }) {
-  const [form, setForm] = useState({ name: user.name, phone: user.phone || '' })
+function EditUserModal({ user, roles, onClose, onSuccess }) {
+  const [form, setForm] = useState({ name: user.name, phone: user.phone || '', custom_role: user.custom_role || '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -240,7 +262,7 @@ function EditUserModal({ user, onClose, onSuccess }) {
     setLoading(true)
     setError(null)
     try {
-      await api.adminUpdateUser(user.id, form)
+      await api.adminUpdateUser(user.id, { ...form, custom_role: form.custom_role || null })
       onSuccess()
     } catch (err) {
       setError(err.message)
@@ -257,6 +279,14 @@ function EditUserModal({ user, onClose, onSuccess }) {
         </Field>
         <Field label="Téléphone">
           <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input-dark" />
+        </Field>
+        <Field label="Rôle métier">
+          <select value={form.custom_role} onChange={(e) => setForm({ ...form, custom_role: e.target.value })} className="input-dark">
+            <option value="">— Aucun —</option>
+            {roles.map(r => (
+              <option key={r.id} value={r.name}>{r.name}</option>
+            ))}
+          </select>
         </Field>
         <ModalButtons onCancel={onClose} loading={loading} submitLabel="Enregistrer" />
       </form>

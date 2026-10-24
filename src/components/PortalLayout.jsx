@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
-  Home, PlusCircle, BookOpen, LogOut, Activity, Shield, Package, FileText
+  Home, PlusCircle, BookOpen, LogOut, Activity, Shield, Package, FileText, Armchair
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
@@ -58,6 +58,20 @@ export default function PortalLayout() {
     <BookOpen size={20} />
     Base de connaissances
   </NavLink>
+  <NavLink 
+  to="/portal/desksharing" 
+  className={({ isActive }) => 
+    `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+      isActive 
+        ? 'bg-blue-600 text-white' 
+        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+    }`
+  }
+>
+  <Armchair size={20} />
+  Réserver un poste
+</NavLink>
+
 
           {canReturnToAdmin && (
             <div className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-700">
