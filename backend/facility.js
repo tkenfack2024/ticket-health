@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
+import { createClient } from '@libsql/client'
+import { TENANTS } from './tenants.js'
 
 export function initFacilityTables(db) {
   db.exec(`
@@ -31,52 +33,174 @@ export function initFacilityTables(db) {
       FOREIGN KEY (floor_id) REFERENCES floors(id) ON DELETE CASCADE
     )
   `)
+
   console.log('✅ Tables Bâtiments/Salles initialisées')
 }
 
 export function createFacilityRouter(db, logAction) {
   const router = Router()
-  router.use(authRequired, adminOnly)
+  router.use(authRequired)
 
-  // GET /api/facility/tree (Récupérer toute l'arborescence)
-  router.get('/tree', (req, res) => {
-    const sites = db.prepare('SELECT * FROM sites ORDER BY name').all()
-    for (const site of sites) {
-      site.floors = db.prepare('SELECT * FROM floors WHERE site_id = ? ORDER BY name').all(site.id)
-      for (const floor of site.floors) {
-        floor.rooms = db.prepare('SELECT * FROM rooms WHERE floor_id = ? ORDER BY name').all(floor.id)
+  // ==================== GET /api/facility/tree ====================
+  // Arbre complet des sites → étages → salles
+  router.get('/tree', async (req, res) => {
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const sitesResult = await tursoDb.execute('SELECT * FROM sites ORDER BY name ASC')
+        const floorsResult = await tursoDb.execute('SELECT * FROM floors ORDER BY name ASC')
+        const roomsResult = await tursoDb.execute('SELECT * FROM rooms ORDER BY name ASC')
+
+        const tree = sitesResult.rows.map(site => ({
+          ...site,
+          floors: floorsResult.rows
+            .filter(f => f.site_id === site.id)
+            .map(floor => ({
+              ...floor,
+              rooms: roomsResult.rows.filter(r => r.floor_id === floor.id)
+            }))
+        }))
+
+        return res.json(tree)
+      } catch (err) {
+        console.error('Erreur Turso GET facility tree:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
       }
     }
-    res.json(sites)
+
+    // --- MODE SQLITE ---
+    const sites = db.prepare('SELECT * FROM sites ORDER BY name ASC').all()
+    const floors = db.prepare('SELECT * FROM floors ORDER BY name ASC').all()
+    const rooms = db.prepare('SELECT * FROM rooms ORDER BY name ASC').all()
+
+    const tree = sites.map(site => ({
+      ...site,
+      floors: floors
+        .filter(f => f.site_id === site.id)
+        .map(floor => ({
+          ...floor,
+          rooms: rooms.filter(r => r.floor_id === floor.id)
+        }))
+    }))
+
+    res.json(tree)
   })
 
-  // POST /api/facility/sites
-  router.post('/sites', (req, res) => {
+  // ==================== POST /api/facility/sites ====================
+  router.post('/sites', adminOnly, async (req, res) => {
     const { name, address } = req.body
-    if (!name) return res.status(400).json({ error: 'Nom obligatoire' })
-    const result = db.prepare('INSERT INTO sites (name, address) VALUES (?, ?)').run(name, address)
-    res.status(201).json({ id: result.lastInsertRowid, success: true })
-  })
+    const { tenantId } = req.user
 
-  // POST /api/facility/floors
-  router.post('/floors', (req, res) => {
-    const { site_id, name } = req.body
-    if (!site_id || !name) return res.status(400).json({ error: 'Site et Nom obligatoires' })
-    const result = db.prepare('INSERT INTO floors (site_id, name) VALUES (?, ?)').run(site_id, name)
-    res.status(201).json({ id: result.lastInsertRowid, success: true })
-  })
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Le nom est obligatoire' })
 
-  // POST /api/facility/rooms
-  router.post('/rooms', (req, res) => {
-    const { floor_id, name, type, code, capacity } = req.body
-    if (!floor_id || !name || !type) return res.status(400).json({ error: 'Champs obligatoires manquants' })
-    try {
-      const result = db.prepare('INSERT INTO rooms (floor_id, name, type, code, capacity) VALUES (?, ?, ?, ?, ?)').run(floor_id, name, type, code, capacity || 1)
-      res.status(201).json({ id: result.lastInsertRowid, success: true })
-    } catch (err) {
-      if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce code de salle existe déjà' })
-      res.status(500).json({ error: err.message })
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const result = await tursoDb.execute({
+          sql: 'INSERT INTO sites (name, address) VALUES (?, ?)',
+          args: [name.trim(), address || null]
+        })
+        const newId = Number(result.lastInsertRowid)
+        logAction(req.user.id, req.user.name, 'create', 'site', newId, `Site créé : ${name}`)
+        return res.status(201).json({ success: true, id: newId })
+      } catch (err) {
+        console.error('Erreur Turso POST site:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
     }
+
+    // --- MODE SQLITE ---
+    const result = db.prepare('INSERT INTO sites (name, address) VALUES (?, ?)').run(name.trim(), address || null)
+    logAction(req.user.id, req.user.name, 'create', 'site', result.lastInsertRowid, `Site créé : ${name}`)
+    res.status(201).json({ success: true, id: result.lastInsertRowid })
+  })
+
+  // ==================== POST /api/facility/floors ====================
+  router.post('/floors', adminOnly, async (req, res) => {
+    const { site_id, name } = req.body
+    const { tenantId } = req.user
+
+    if (!site_id || !name || !name.trim()) return res.status(400).json({ error: 'site_id et nom sont obligatoires' })
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const check = await tursoDb.execute({ sql: 'SELECT id FROM sites WHERE id = ?', args: [site_id] })
+        if (check.rows.length === 0) return res.status(404).json({ error: 'Site non trouvé' })
+
+        const result = await tursoDb.execute({
+          sql: 'INSERT INTO floors (site_id, name) VALUES (?, ?)',
+          args: [site_id, name.trim()]
+        })
+        const newId = Number(result.lastInsertRowid)
+        logAction(req.user.id, req.user.name, 'create', 'floor', newId, `Étage créé : ${name}`)
+        return res.status(201).json({ success: true, id: newId })
+      } catch (err) {
+        console.error('Erreur Turso POST floor:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    const site = db.prepare('SELECT id FROM sites WHERE id = ?').get(site_id)
+    if (!site) return res.status(404).json({ error: 'Site non trouvé' })
+
+    const result = db.prepare('INSERT INTO floors (site_id, name) VALUES (?, ?)').run(site_id, name.trim())
+    logAction(req.user.id, req.user.name, 'create', 'floor', result.lastInsertRowid, `Étage créé : ${name}`)
+    res.status(201).json({ success: true, id: result.lastInsertRowid })
+  })
+
+  // ==================== POST /api/facility/rooms ====================
+  router.post('/rooms', adminOnly, async (req, res) => {
+    const { floor_id, name, type, code, capacity } = req.body
+    const { tenantId } = req.user
+
+    if (!floor_id || !name || !type) return res.status(400).json({ error: 'floor_id, nom et type sont obligatoires' })
+    if (!['Bureau', 'Magasin', 'Salle de réunion', 'Salle d\'opération', 'Autre'].includes(type)) {
+      return res.status(400).json({ error: 'Type de salle invalide' })
+    }
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const check = await tursoDb.execute({ sql: 'SELECT id FROM floors WHERE id = ?', args: [floor_id] })
+        if (check.rows.length === 0) return res.status(404).json({ error: 'Étage non trouvé' })
+
+        const result = await tursoDb.execute({
+          sql: 'INSERT INTO rooms (floor_id, name, type, code, capacity) VALUES (?, ?, ?, ?, ?)',
+          args: [floor_id, name.trim(), type, code || null, capacity || 1]
+        })
+        const newId = Number(result.lastInsertRowid)
+        logAction(req.user.id, req.user.name, 'create', 'room', newId, `Salle créée : ${name}`)
+        return res.status(201).json({ success: true, id: newId })
+      } catch (err) {
+        console.error('Erreur Turso POST room:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    const floor = db.prepare('SELECT id FROM floors WHERE id = ?').get(floor_id)
+    if (!floor) return res.status(404).json({ error: 'Étage non trouvé' })
+
+    const result = db.prepare('INSERT INTO rooms (floor_id, name, type, code, capacity) VALUES (?, ?, ?, ?, ?)')
+      .run(floor_id, name.trim(), type, code || null, capacity || 1)
+    logAction(req.user.id, req.user.name, 'create', 'room', result.lastInsertRowid, `Salle créée : ${name}`)
+    res.status(201).json({ success: true, id: result.lastInsertRowid })
   })
 
   return router
