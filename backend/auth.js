@@ -63,7 +63,7 @@ export function createAuthRouter(db, logAction) {
       }
     }
 
-    // --- Mode SQLite (Mono-tenant - votre code actuel) ---
+    // --- Mode SQLite (Mono-tenant) ---
     const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase())
     if (existing) {
       return res.status(409).json({ error: 'Cet email est déjà utilisé' })
@@ -164,7 +164,7 @@ export function createAuthRouter(db, logAction) {
       }
     }
 
-    // --- Mode SQLite (votre code actuel) ---
+    // --- Mode SQLite ---
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim())
     if (!user || !user.active) {
       return res.status(401).json({ error: 'Identifiants invalides' })
@@ -184,17 +184,14 @@ export function createAuthRouter(db, logAction) {
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     )
 
-    // Calcul des permissions (votre code actuel)
+    // Calcul des permissions
     let permissions = []
     if (user.role === 'admin') {
       permissions = db.prepare('SELECT code FROM permissions').all().map(p => p.code)
     } else {
       if (user.custom_role) {
         const rolePerms = db.prepare(`
-          SELECT rp.permission_code as code 
-          FROM role_permissions rp 
-          JOIN roles r ON rp.role_id = r.id 
-          WHERE r.name = ?
+          SELECT rp.permission_code as code FROM role_permissions rp JOIN roles r ON rp.role_id = r.id WHERE r.name = ?
         `).all(user.custom_role).map(p => p.code)
         permissions.push(...rolePerms)
       }
@@ -219,7 +216,7 @@ export function createAuthRouter(db, logAction) {
     })
   })
 
-  // ==================== OTP (laissé tel quel, mode SQLite uniquement) ====================
+  // ==================== OTP (laissé tel quel) ====================
   router.post('/request-otp', async (req, res) => {
     const { email } = req.body
     if (!email) return res.status(400).json({ error: 'Email obligatoire' })
@@ -275,15 +272,13 @@ export function createAuthRouter(db, logAction) {
     })
   })
 
-  // ==================== /ME (Multi-tenant) ====================
+  // ==================== /ME ====================
   router.get('/me', authRequired, async (req, res) => {
     const { tenantId } = req.user
 
-    // --- Mode Turso ---
     if (tenantId) {
       const tenant = TENANTS[tenantId]
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
-
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
       
       try {
@@ -314,19 +309,14 @@ export function createAuthRouter(db, logAction) {
           permissions = [...new Set(permissions)]
         }
 
-        return res.json({
-          ...user,
-          permissions: permissions,
-          isAdmin: user.role === 'admin',
-          tenantId
-        })
+        return res.json({ ...user, permissions, isAdmin: user.role === 'admin', tenantId })
       } catch (err) {
         console.error('Erreur Turso me:', err)
         return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
       }
     }
 
-    // --- Mode SQLite (votre code actuel) ---
+    // --- MODE SQLITE ---
     const user = db.prepare('SELECT id, name, email, phone, role, custom_role, active FROM users WHERE id = ?').get(req.user.id)
     if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' })
 
@@ -336,10 +326,7 @@ export function createAuthRouter(db, logAction) {
     } else {
       if (user.custom_role) {
         const rolePerms = db.prepare(`
-          SELECT rp.permission_code as code 
-          FROM role_permissions rp 
-          JOIN roles r ON rp.role_id = r.id 
-          WHERE r.name = ?
+          SELECT rp.permission_code as code FROM role_permissions rp JOIN roles r ON rp.role_id = r.id WHERE r.name = ?
         `).all(user.custom_role).map(p => p.code)
         permissions.push(...rolePerms)
       }
@@ -349,11 +336,7 @@ export function createAuthRouter(db, logAction) {
       permissions = [...new Set(permissions)]
     }
 
-    res.json({
-      ...user,
-      permissions: permissions,
-      isAdmin: user.role === 'admin'
-    })
+    res.json({ ...user, permissions, isAdmin: user.role === 'admin' })
   })
 
   return router

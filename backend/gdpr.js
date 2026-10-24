@@ -1,5 +1,7 @@
 import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
+import { createClient } from '@libsql/client'
+import { TENANTS } from './tenants.js'
 
 // ==================== INITIALISATION ====================
 
@@ -24,95 +26,7 @@ export function initGdprTables(db) {
     )
   `)
 
-  // Seed : traitements par défaut
-  const count = db.prepare('SELECT COUNT(*) as c FROM gdpr_processing').get().c
-  if (count === 0) {
-    const defaults = [
-      {
-        name: 'Gestion des comptes utilisateurs',
-        description: 'Création et gestion des comptes employés',
-        data_categories: 'Nom, email, téléphone, mot de passe (hashé)',
-        purpose: 'Authentification et contrôle d\'accès',
-        legal_basis: 'Exécution du contrat de travail',
-        data_subjects: 'Employés de l\'établissement',
-        recipients: 'Service informatique, Administrateurs',
-        retention_period: '5 ans après fin de contrat',
-        security_measures: 'JWT, bcrypt, rôles, permissions granulaires',
-        data_location: 'Base SQLite locale (backend/tickets.db)',
-        is_sensitive: 0,
-      },
-      {
-        name: 'Gestion des tickets de support',
-        description: 'Traitement des demandes d\'assistance IT',
-        data_categories: 'Nom, description du problème, échanges',
-        purpose: 'Résolution des incidents IT',
-        legal_basis: 'Intérêt légitime (continuité de service)',
-        data_subjects: 'Employés',
-        recipients: 'Techniciens, Administrateurs',
-        retention_period: '3 ans après clôture',
-        security_measures: 'Contrôle d\'accès, filtrage par rôle, journalisation',
-        data_location: 'Base SQLite locale',
-        is_sensitive: 0,
-      },
-      {
-        name: 'Envoi d\'OTP par email',
-        description: 'Envoi de codes à usage unique par email pour authentification',
-        data_categories: 'Email, nom, code OTP',
-        purpose: 'Authentification sécurisée',
-        legal_basis: 'Exécution du contrat',
-        data_subjects: 'Employés',
-        recipients: 'Google (Gmail SMTP) — sous-traitant',
-        retention_period: '5 minutes (code OTP éphémère)',
-        security_measures: 'Expiration 5 min, HTTPS pour l\'envoi',
-        data_location: 'Base SQLite + Gmail (transit)',
-        is_sensitive: 0,
-      },
-      {
-        name: 'Journal d\'audit',
-        description: 'Enregistrement des actions utilisateurs',
-        data_categories: 'User ID, nom, action, entité, timestamp',
-        purpose: 'Traçabilité et conformité réglementaire',
-        legal_basis: 'Obligation légale',
-        data_subjects: 'Employés, Administrateurs',
-        recipients: 'Administrateurs, Auditeurs',
-        retention_period: '5 ans (obligation légale)',
-        security_measures: 'Accès réservé aux admins, immutabilité',
-        data_location: 'Base SQLite locale',
-        is_sensitive: 0,
-      },
-      {
-        name: 'Base de connaissances',
-        description: 'Articles de documentation IT',
-        data_categories: 'Nom auteur, contenu technique',
-        purpose: 'Partage de connaissances',
-        legal_basis: 'Intérêt légitime',
-        data_subjects: 'Employés (auteurs)',
-        recipients: 'Tous les utilisateurs avec permission kb.read',
-        retention_period: 'Conservation permanente (archivage)',
-        security_measures: 'Contrôle par permissions',
-        data_location: 'Base SQLite locale',
-        is_sensitive: 0,
-      },
-    ]
-
-    const insert = db.prepare(`
-      INSERT INTO gdpr_processing (
-        name, description, data_categories, purpose, legal_basis,
-        data_subjects, recipients, retention_period, security_measures,
-        data_location, is_sensitive
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    for (const d of defaults) {
-      insert.run(
-        d.name, d.description, d.data_categories, d.purpose, d.legal_basis,
-        d.data_subjects, d.recipients, d.retention_period, d.security_measures,
-        d.data_location, d.is_sensitive
-      )
-    }
-
-    console.log('✅ Registre GDPR : 5 traitements initiaux créés')
-  }
+  console.log('✅ Tables RGPD initialisées')
 }
 
 // ==================== ROUTES ====================
@@ -122,145 +36,241 @@ export function createGdprRouter(db, logAction) {
   router.use(authRequired, adminOnly)
 
   // ---- GET /api/gdpr/processing ----
-  router.get('/processing', (req, res) => {
-    const items = db.prepare(`
-      SELECT * FROM gdpr_processing
-      ORDER BY is_sensitive DESC, name ASC
-    `).all()
-    res.json(items)
-  })
+  router.get('/processing', async (req, res) => {
+    const { tenantId } = req.user
 
-  // ---- GET /api/gdpr/processing/:id ----
-  router.get('/processing/:id', (req, res) => {
-    const item = db.prepare('SELECT * FROM gdpr_processing WHERE id = ?').get(req.params.id)
-    if (!item) return res.status(404).json({ error: 'Traitement non trouvé' })
-    res.json(item)
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const result = await tursoDb.execute('SELECT * FROM gdpr_processing ORDER BY name ASC')
+        return res.json(result.rows)
+      } catch (err) {
+        console.error('Erreur Turso GET gdpr:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    const processing = db.prepare('SELECT * FROM gdpr_processing ORDER BY name ASC').all()
+    res.json(processing)
   })
 
   // ---- POST /api/gdpr/processing ----
-  router.post('/processing', (req, res) => {
+  router.post('/processing', async (req, res) => {
     const {
       name, description, data_categories, purpose, legal_basis,
       data_subjects, recipients, retention_period, security_measures,
-      data_location, is_sensitive
+      data_location, is_sensitive,
     } = req.body
+    const { tenantId } = req.user
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Le nom est obligatoire' })
     }
 
-    const result = db.prepare(`
-      INSERT INTO gdpr_processing (
-        name, description, data_categories, purpose, legal_basis,
-        data_subjects, recipients, retention_period, security_measures,
-        data_location, is_sensitive, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      name.trim(),
-      description?.trim() || null,
-      data_categories?.trim() || null,
-      purpose?.trim() || null,
-      legal_basis?.trim() || null,
-      data_subjects?.trim() || null,
-      recipients?.trim() || null,
-      retention_period?.trim() || null,
-      security_measures?.trim() || null,
-      data_location?.trim() || null,
-      is_sensitive ? 1 : 0,
-      req.user.name
-    )
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
-    const item = db.prepare('SELECT * FROM gdpr_processing WHERE id = ?').get(result.lastInsertRowid)
-    logAction(req.user.id, req.user.name, 'create', 'gdpr_processing', item.id, `Traitement GDPR créé : ${item.name}`)
+      try {
+        const result = await tursoDb.execute({
+          sql: `INSERT INTO gdpr_processing (
+                  name, description, data_categories, purpose, legal_basis,
+                  data_subjects, recipients, retention_period, security_measures,
+                  data_location, is_sensitive, updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            name.trim(), description?.trim() || null, data_categories?.trim() || null,
+            purpose?.trim() || null, legal_basis?.trim() || null, data_subjects?.trim() || null,
+            recipients?.trim() || null, retention_period?.trim() || null,
+            security_measures?.trim() || null, data_location?.trim() || null,
+            is_sensitive ? 1 : 0, req.user.name
+          ]
+        })
 
-    res.status(201).json(item)
+        const newId = Number(result.lastInsertRowid)
+        logAction(req.user.id, req.user.name, 'create', 'gdpr_processing', newId, `Traitement RGPD créé : ${name}`)
+        return res.status(201).json({ success: true, id: newId })
+      } catch (err) {
+        console.error('Erreur Turso POST gdpr:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    try {
+      const result = db.prepare(`
+        INSERT INTO gdpr_processing (
+          name, description, data_categories, purpose, legal_basis,
+          data_subjects, recipients, retention_period, security_measures,
+          data_location, is_sensitive, updated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        name.trim(), description?.trim() || null, data_categories?.trim() || null,
+        purpose?.trim() || null, legal_basis?.trim() || null, data_subjects?.trim() || null,
+        recipients?.trim() || null, retention_period?.trim() || null,
+        security_measures?.trim() || null, data_location?.trim() || null,
+        is_sensitive ? 1 : 0, req.user.name
+      )
+
+      logAction(req.user.id, req.user.name, 'create', 'gdpr_processing', result.lastInsertRowid, `Traitement RGPD créé : ${name}`)
+      res.status(201).json({ success: true, id: result.lastInsertRowid })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
   })
 
   // ---- PATCH /api/gdpr/processing/:id ----
-  router.patch('/processing/:id', (req, res) => {
+  router.patch('/processing/:id', async (req, res) => {
     const targetId = parseInt(req.params.id)
-    const item = db.prepare('SELECT * FROM gdpr_processing WHERE id = ?').get(targetId)
-    if (!item) return res.status(404).json({ error: 'Traitement non trouvé' })
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const check = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_processing WHERE id = ?', args: [targetId] })
+        const existing = check.rows[0]
+        if (!existing) return res.status(404).json({ error: 'Traitement non trouvé' })
+
+        const allowed = [
+          'name', 'description', 'data_categories', 'purpose', 'legal_basis',
+          'data_subjects', 'recipients', 'retention_period', 'security_measures',
+          'data_location', 'is_sensitive',
+        ]
+        const updates = []
+        const args = []
+
+        for (const field of allowed) {
+          if (req.body[field] !== undefined) {
+            updates.push(`${field} = ?`)
+            if (field === 'is_sensitive') args.push(req.body[field] ? 1 : 0)
+            else args.push(req.body[field] || null)
+          }
+        }
+
+        if (updates.length === 0) return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
+
+        updates.push('updated_at = datetime(\'now\', \'localtime\')')
+        updates.push('updated_by = ?')
+        args.push(req.user.name, targetId)
+
+        await tursoDb.execute({ sql: `UPDATE gdpr_processing SET ${updates.join(', ')} WHERE id = ?`, args })
+
+        logAction(req.user.id, req.user.name, 'update', 'gdpr_processing', targetId, `Traitement RGPD modifié : ${existing.name}`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso PATCH gdpr:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    const existing = db.prepare('SELECT * FROM gdpr_processing WHERE id = ?').get(targetId)
+    if (!existing) return res.status(404).json({ error: 'Traitement non trouvé' })
 
     const allowed = [
       'name', 'description', 'data_categories', 'purpose', 'legal_basis',
       'data_subjects', 'recipients', 'retention_period', 'security_measures',
-      'data_location', 'is_sensitive'
+      'data_location', 'is_sensitive',
     ]
-
     const updates = []
     const values = []
+
     for (const field of allowed) {
       if (req.body[field] !== undefined) {
         updates.push(`${field} = ?`)
-        if (field === 'is_sensitive') {
-          values.push(req.body[field] ? 1 : 0)
-        } else {
-          values.push(req.body[field] || null)
-        }
+        if (field === 'is_sensitive') values.push(req.body[field] ? 1 : 0)
+        else values.push(req.body[field] || null)
       }
     }
 
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
-    }
+    if (updates.length === 0) return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
 
     updates.push('updated_at = datetime(\'now\', \'localtime\')')
     updates.push('updated_by = ?')
-    values.push(req.user.name)
-    values.push(targetId)
+    values.push(req.user.name, targetId)
 
     db.prepare(`UPDATE gdpr_processing SET ${updates.join(', ')} WHERE id = ?`).run(...values)
-
-    const updated = db.prepare('SELECT * FROM gdpr_processing WHERE id = ?').get(targetId)
-    logAction(req.user.id, req.user.name, 'update', 'gdpr_processing', targetId, `Traitement GDPR modifié : ${updated.name}`)
-
-    res.json(updated)
+    logAction(req.user.id, req.user.name, 'update', 'gdpr_processing', targetId, `Traitement RGPD modifié : ${existing.name}`)
+    res.json({ success: true })
   })
 
   // ---- DELETE /api/gdpr/processing/:id ----
-  router.delete('/processing/:id', (req, res) => {
+  router.delete('/processing/:id', async (req, res) => {
     const targetId = parseInt(req.params.id)
-    const item = db.prepare('SELECT * FROM gdpr_processing WHERE id = ?').get(targetId)
-    if (!item) return res.status(404).json({ error: 'Traitement non trouvé' })
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const check = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_processing WHERE id = ?', args: [targetId] })
+        const existing = check.rows[0]
+        if (!existing) return res.status(404).json({ error: 'Traitement non trouvé' })
+
+        await tursoDb.execute({ sql: 'DELETE FROM gdpr_processing WHERE id = ?', args: [targetId] })
+        logAction(req.user.id, req.user.name, 'delete', 'gdpr_processing', targetId, `Traitement RGPD supprimé : ${existing.name}`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso DELETE gdpr:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    const existing = db.prepare('SELECT * FROM gdpr_processing WHERE id = ?').get(targetId)
+    if (!existing) return res.status(404).json({ error: 'Traitement non trouvé' })
 
     db.prepare('DELETE FROM gdpr_processing WHERE id = ?').run(targetId)
-    logAction(req.user.id, req.user.name, 'delete', 'gdpr_processing', targetId, `Traitement GDPR supprimé : ${item.name}`)
-
+    logAction(req.user.id, req.user.name, 'delete', 'gdpr_processing', targetId, `Traitement RGPD supprimé : ${existing.name}`)
     res.json({ success: true })
   })
 
   // ---- GET /api/gdpr/export ----
-  // Export du registre en CSV
-  router.get('/export', (req, res) => {
-    const items = db.prepare('SELECT * FROM gdpr_processing ORDER BY name ASC').all()
+  router.get('/export', async (req, res) => {
+    const { tenantId } = req.user
 
-    const headers = [
-      'ID', 'Nom', 'Description', 'Données traitées', 'Finalité', 'Base légale',
-      'Personnes concernées', 'Destinataires', 'Durée de conservation',
-      'Mesures de sécurité', 'Localisation', 'Sensible', 'Créé le', 'Modifié le'
-    ]
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
-    const csvEscape = (v) => {
-      if (v === null || v === undefined) return ''
-      const s = String(v)
-      return (s.includes(',') || s.includes('"') || s.includes('\n'))
-        ? `"${s.replace(/"/g, '""')}"`
-        : s
+      try {
+        const result = await tursoDb.execute('SELECT * FROM gdpr_processing ORDER BY name ASC')
+        const data = {
+          exported_at: new Date().toISOString(),
+          tenant: tenant.name,
+          processing_register: result.rows,
+        }
+
+        res.setHeader('Content-Type', 'application/json')
+        res.setHeader('Content-Disposition', `attachment; filename="gdpr-${tenantId}-${Date.now()}.json"`)
+        return res.send(JSON.stringify(data, null, 2))
+      } catch (err) {
+        console.error('Erreur Turso export gdpr:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
     }
 
-    const rows = items.map(i => [
-      i.id, i.name, i.description, i.data_categories, i.purpose, i.legal_basis,
-      i.data_subjects, i.recipients, i.retention_period, i.security_measures,
-      i.data_location, i.is_sensitive ? 'Oui' : 'Non', i.created_at, i.updated_at
-    ].map(csvEscape).join(','))
+    // --- MODE SQLITE ---
+    const processing = db.prepare('SELECT * FROM gdpr_processing ORDER BY name ASC').all()
+    const data = {
+      exported_at: new Date().toISOString(),
+      processing_register: processing,
+    }
 
-    const csv = [headers.join(','), ...rows].join('\n')
-
-    const dateStr = new Date().toISOString().slice(0, 10)
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
-    res.setHeader('Content-Disposition', `attachment; filename="registre-gdpr-${dateStr}.csv"`)
-    res.send('\uFEFF' + csv)
+    res.setHeader('Content-Type', 'application/json')
+    res.setHeader('Content-Disposition', `attachment; filename="gdpr-${Date.now()}.json"`)
+    res.send(JSON.stringify(data, null, 2))
   })
 
   return router
