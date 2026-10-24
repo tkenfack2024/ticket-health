@@ -1,9 +1,16 @@
 import { useState } from 'react'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
-import { Activity, Mail, Lock, KeyRound, Loader2, Moon, Sun } from 'lucide-react'
+import { Activity, Mail, Lock, KeyRound, Loader2, Moon, Sun, Building2 } from 'lucide-react'
 import { api } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+
+// Liste des entreprises disponibles
+const TENANTS = [
+  { id: 'entreprise-test', name: 'Clinique Test' },
+  { id: 'entreprise-alpha', name: 'Hôpital Alpha' },
+  { id: 'entreprise-beta', name: 'Clinique Beta' },
+]
 
 // Calcule la route de destination selon le rôle ET les permissions granulaires
 function getTargetPath(user, redirectTo) {
@@ -24,6 +31,7 @@ export default function Login() {
   const { isDark, toggleTheme } = useTheme()
 
   const [mode, setMode] = useState('password')
+  const [tenantId, setTenantId] = useState('') // Nouvel état
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [otpCode, setOtpCode] = useState('')
@@ -34,22 +42,15 @@ export default function Login() {
 
   const redirectTo = location.state?.from?.pathname || '/'
 
-    const handlePasswordLogin = async (e) => {
+  const handlePasswordLogin = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
-      const res = await api.login({ email, password })
-      // On attend que login() récupère les permissions
+      const res = await api.login({ email, password, tenantId })
       const freshUser = await login(res.user, res.token)
       
-      const hasAnyPermission = Array.isArray(freshUser.permissions) && freshUser.permissions.length > 0
-      const canAccessBackOffice = freshUser.role === 'admin' || freshUser.role === 'technicien' || hasAnyPermission
-      
-      const targetPath = canAccessBackOffice
-        ? (redirectTo && redirectTo !== '/' ? redirectTo : '/')
-        : '/portal'
-        
+      const targetPath = getTargetPath(freshUser, redirectTo)
       navigate(targetPath, { replace: true })
     } catch (err) {
       setError(err.message)
@@ -80,8 +81,10 @@ export default function Login() {
     setError(null)
     try {
       const res = await api.verifyOtp(email, otpCode)
-      login(res.user, res.token)
-      navigate(getTargetPath(res.user, redirectTo), { replace: true })
+      const freshUser = await login(res.user, res.token)
+      
+      const targetPath = getTargetPath(freshUser, redirectTo)
+      navigate(targetPath, { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -108,6 +111,30 @@ export default function Login() {
         </div>
 
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 transition-colors">
+          {/* Sélection de l'entreprise */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              Entreprise
+            </label>
+            <div className="relative">
+              <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
+              <select
+                required
+                value={tenantId}
+                onChange={(e) => setTenantId(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+              >
+                <option value="">— Sélectionnez votre entreprise —</option>
+                {TENANTS.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              (Laissez vide pour l'ancienne base locale)
+            </p>
+          </div>
+
           {/* Onglets */}
           <div className="flex gap-2 mb-6 bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
             <button

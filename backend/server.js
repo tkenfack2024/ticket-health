@@ -30,6 +30,8 @@ import { initRiskTables, createRiskRouter } from './risks.js'
 import { initFacilityTables, createFacilityRouter } from './facility.js'
 import { initResourceTables, createResourceRouter, startResourcesCron } from './resources.js'
 import { initPatientTables, createPatientRouter } from './patients.js'
+import { createClient } from '@libsql/client'
+import { TENANTS } from './tenants.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -461,9 +463,61 @@ app.get('/api/security/encryption-status', authRequired, (req, res) => {
 })
 
 // ---- GET /api/tickets ----
-app.get('/api/tickets', authRequired, (req, res) => {
+app.get('/api/tickets', authRequired, async (req, res) => {
   const { archived, assigned_to } = req.query
+  const { tenantId } = req.user
 
+  // --- MODE TURSO (Multi-tenant) ---
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+    
+    try {
+      let query = `
+        SELECT t.*, u.name as assigned_to_name, u.email as assigned_to_email
+        FROM tickets t
+        LEFT JOIN users u ON t.assignee = u.email
+        WHERE 1=1
+      `
+      const args = []
+
+      query += archived === 'true' ? ' AND t.archived = 1' : ' AND t.archived = 0'
+
+      if (req.user.role === 'admin') {
+        // Admin : voit tout
+      } else if (req.user.role === 'technicien') {
+        query += ` AND (t.assignee = ? OR t.created_by = ?)`
+        args.push(req.user.email, req.user.id)
+      } else {
+        query += ` AND (t.created_by = ? OR t.assignee = ?)`
+        args.push(req.user.id, req.user.email)
+      }
+
+      if (assigned_to) {
+        query += ' AND t.assignee = ?'
+        args.push(assigned_to)
+      }
+
+      query += ' ORDER BY t.id DESC'
+
+      const result = await tursoDb.execute({ sql: query, args })
+      const tickets = result.rows
+
+      for (const t of tickets) {
+        t.sla_status = computeSlaStatus(t)
+        t.description = decrypt(t.description)
+      }
+
+      return res.json(tickets)
+    } catch (err) {
+      console.error('Erreur Turso tickets:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  // --- MODE SQLITE (votre code actuel) ---
   let query = `
     SELECT t.*, u.name as assigned_to_name, u.email as assigned_to_email
     FROM tickets t
@@ -493,11 +547,10 @@ app.get('/api/tickets', authRequired, (req, res) => {
 
   const tickets = db.prepare(query).all(...params)
 
-  // Enrichir avec l'Ã©tat SLA
-for (const t of tickets) {
-  t.sla_status = computeSlaStatus(t)
-  t.description = decrypt(t.description)
-}
+  for (const t of tickets) {
+    t.sla_status = computeSlaStatus(t)
+    t.description = decrypt(t.description)
+  }
 
   res.json(tickets)
 })
@@ -538,24 +591,69 @@ res.json(ticket)
 })
 
 // ---- POST /api/tickets ----
-app.post('/api/tickets', authRequired, (req, res) => {
+app.post('/api/tickets', authRequired, async (req, res) => {
   const { title, category, priority, description, asset_id } = req.body
+  const { tenantId } = req.user
+
   if (!title || !category || !priority) {
-    return res.status(400).json({ error: 'Titre, catÃ©gorie et prioritÃ© sont obligatoires' })
+    return res.status(400).json({ error: 'Titre, catégorie et priorité sont obligatoires' })
   }
 
+  const encryptedDescription = description ? encrypt(description) : null
+
+  // --- MODE TURSO (Multi-tenant) ---
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      // Vérification asset (optionnelle, à adapter)
+      // if (asset_id) { ... }
+
+      const result = await tursoDb.execute({
+        sql: `
+          INSERT INTO tickets (title, category, priority, description, created_by, creator, asset_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        args: [title, category, priority, encryptedDescription, req.user.id, req.user.name, asset_id || null]
+      })
+
+      const newTicketResult = await tursoDb.execute({
+        sql: `
+          SELECT t.*, u.name as assigned_to_name
+          FROM tickets t
+          LEFT JOIN users u ON t.assignee = u.email
+          WHERE t.id = ?
+        `,
+        args: [result.lastInsertRowid]
+      })
+      const newTicket = newTicketResult.rows[0]
+
+      // Appliquer SLA (il faudrait adapter applySlaToTicket pour Turso, on le fera plus tard)
+      // applySlaToTicket(tursoDb, result.lastInsertRowid, priority)
+
+      newTicket.sla_status = computeSlaStatus(newTicket)
+      logAction(req.user.id, req.user.name, 'create', 'ticket', newTicket.id, `Ticket créé : ${newTicket.title}`)
+      
+      return res.status(201).json(newTicket)
+    } catch (err) {
+      console.error('Erreur Turso POST ticket:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  // --- MODE SQLITE (votre code actuel) ---
   if (asset_id) {
     const asset = db.prepare('SELECT id FROM assets WHERE id = ?').get(asset_id)
     if (!asset) return res.status(400).json({ error: 'Asset introuvable' })
   }
 
-// Chiffrer la description
-const encryptedDescription = description ? encrypt(description) : null
-
-const result = db.prepare(`
-  INSERT INTO tickets (title, category, priority, description, created_by, creator, asset_id)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
-`).run(title, category, priority, encryptedDescription, req.user.id, req.user.name, asset_id || null)
+  const result = db.prepare(`
+    INSERT INTO tickets (title, category, priority, description, created_by, creator, asset_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(title, category, priority, encryptedDescription, req.user.id, req.user.name, asset_id || null)
 
   applySlaToTicket(db, result.lastInsertRowid, priority)
 
@@ -567,7 +665,7 @@ const result = db.prepare(`
   `).get(result.lastInsertRowid)
 
   newTicket.sla_status = computeSlaStatus(newTicket)
-  logAction(req.user.id, req.user.name, 'create', 'ticket', newTicket.id, `Ticket crÃ©Ã© : ${newTicket.title}`)
+  logAction(req.user.id, req.user.name, 'create', 'ticket', newTicket.id, `Ticket créé : ${newTicket.title}`)
   res.status(201).json(newTicket)
 })
 
