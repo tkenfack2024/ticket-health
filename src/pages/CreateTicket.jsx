@@ -13,34 +13,32 @@ export default function CreateTicket() {
     description: '',
   })
 
-const [assets, setAssets] = useState([])
-const [assetsLoading, setAssetsLoading] = useState(false)
-const [selectedAssetId, setSelectedAssetId] = useState('')
+  const [assets, setAssets] = useState([])
+  const [assetsLoading, setAssetsLoading] = useState(false)
+  const [selectedAssetId, setSelectedAssetId] = useState('')
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-useEffect(() => {
-  // Charger les assets quand la catégorie change
-  const loadAssets = async () => {
-    if (!form.category) {
-      setAssets([])
-      return
+  useEffect(() => {
+    const loadAssets = async () => {
+      if (!form.category) {
+        setAssets([])
+        return
+      }
+      setAssetsLoading(true)
+      try {
+        const data = await api.getAssets()
+        setAssets(data)
+      } catch (err) {
+        console.error('Erreur chargement assets:', err)
+        setAssets([])
+      } finally {
+        setAssetsLoading(false)
+      }
     }
-    setAssetsLoading(true)
-    try {
-      // Charger les assets filtrés par catégorie (nom du module)
-      const data = await api.getAssets()
-      setAssets(data)
-    } catch (err) {
-      console.error('Erreur chargement assets:', err)
-      setAssets([])
-    } finally {
-      setAssetsLoading(false)
-    }
-  }
-  loadAssets()
-}, [form.category])
+    loadAssets()
+  }, [form.category])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -48,11 +46,12 @@ useEffect(() => {
     setError(null)
 
     try {
-      await api.createTicket({
-  ...form,
-  asset_id: selectedAssetId ? parseInt(selectedAssetId) : null,
-})
-      navigate('/tickets')
+      const newTicket = await api.createTicket({
+        ...form,
+        asset_id: selectedAssetId ? parseInt(selectedAssetId) : null,
+      })
+      // ✅ Redirection vers le DÉTAIL du nouveau ticket
+      navigate(`/tickets/${newTicket.id}`, { replace: true })
     } catch (err) {
       console.error(err)
       setError(err.message)
@@ -122,21 +121,21 @@ useEffect(() => {
             </select>
           </div>
         </div>
-	
-	<div>
-  <label className="block text-sm font-medium text-slate-700 mb-1.5">
-    Équipement / Logiciel concerné
-  </label>
-  <AssetSelector
-    value={selectedAssetId}
-    onChange={setSelectedAssetId}
-    placeholder="Cliquez pour sélectionner un équipement..."
-    disabled={assetsLoading}
-  />
-  <p className="text-xs text-slate-500 mt-1.5">
-    Permet au technicien d'identifier précisément l'équipement en panne
-  </p>
-</div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Équipement / Logiciel concerné
+          </label>
+          <AssetSelector
+            value={selectedAssetId}
+            onChange={setSelectedAssetId}
+            placeholder="Cliquez pour sélectionner un équipement..."
+            disabled={assetsLoading}
+          />
+          <p className="text-xs text-slate-500 mt-1.5">
+            Permet au technicien d'identifier précisément l'équipement en panne
+          </p>
+        </div>
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">Description *</label>

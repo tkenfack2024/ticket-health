@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Search, Plus } from 'lucide-react'
 import SlaBadge from '../components/SlaBadge'
 import { api } from '../api'
@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext'
 
 export default function TicketList() {
   const { user } = useAuth()
+  const location = useLocation()
   const [tickets, setTickets] = useState([])
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('Tous')
@@ -14,17 +15,26 @@ export default function TicketList() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+
     api.getTickets()
       .then(data => {
-        setTickets(data)
-        setLoading(false)
+        if (!cancelled) {
+          setTickets(data)
+          setLoading(false)
+        }
       })
       .catch(err => {
-        console.error(err)
-        setError(err.message)
-        setLoading(false)
+        if (!cancelled) {
+          console.error(err)
+          setError(err.message)
+          setLoading(false)
+        }
       })
-  }, [])
+
+    return () => { cancelled = true }
+  }, [location.key])  // ✅ Se recharge à chaque navigation vers cette page
 
   const filtered = tickets.filter(t => {
     const matchSearch = t.title.toLowerCase().includes(search.toLowerCase())

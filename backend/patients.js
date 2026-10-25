@@ -678,9 +678,9 @@ export function createPatientRouter(db, logAction) {
         if (!record) return res.status(404).json({ error: 'Consultation non trouvée' })
 
         const result = await tursoDb.execute({
-          sql: `INSERT INTO exam_results (record_id, patient_id, exam_type) VALUES (?, ?, ?)`,
-          args: [req.params.recordId, record.patient_id, exam_type]
-        })
+  sql: `INSERT INTO exam_results (record_id, patient_id, exam_type, status) VALUES (?, ?, ?, 'En attente')`,
+  args: [req.params.recordId, record.patient_id, exam_type]
+})
 
         return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) })
       } catch (err) {
@@ -689,10 +689,10 @@ export function createPatientRouter(db, logAction) {
       }
     }
 
-    const record = db.prepare('SELECT patient_id FROM medical_records WHERE id = ?').get(req.params.recordId)
+        const record = db.prepare('SELECT patient_id FROM medical_records WHERE id = ?').get(req.params.recordId)
     if (!record) return res.status(404).json({ error: 'Consultation non trouvée' })
     const result = db.prepare(`
-      INSERT INTO exam_results (record_id, patient_id, exam_type) VALUES (?, ?, ?)
+      INSERT INTO exam_results (record_id, patient_id, exam_type, status) VALUES (?, ?, ?, 'En attente')
     `).run(req.params.recordId, record.patient_id, exam_type)
     res.status(201).json({ success: true, id: result.lastInsertRowid })
   })
