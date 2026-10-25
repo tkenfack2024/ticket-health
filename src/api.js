@@ -1,5 +1,5 @@
 // src/api.js
-const API_URL = 'https://healthticket-backend.onrender.com'
+const API_URL = 'https://healthticket-backend-v2.onrender.com'
 
 async function request(endpoint, options = {}) {
   const token = localStorage.getItem('ht_token')
