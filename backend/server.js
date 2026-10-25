@@ -1017,25 +1017,22 @@ app.get('/api/stats/capacity', authRequired, adminOnly, (req, res) => {
     }
     const mttr = validCount > 0 ? (totalHours / validCount).toFixed(1) : 0
 
-        // On ne prend que les tickets résolus ou ceux qui sont encore actifs
-    const allTickets = db.prepare("SELECT * FROM tickets WHERE archived = 0").all()
-    let totalEvaluated = 0
-    let compliantTickets = 0
-
-    for (const t of allTickets) {
-      const slaStatus = computeSlaStatus(t)
-      
-      // Un ticket compte dans le taux de conformité SEULEMENT s'il est résolu
-      // OU s'il est actif mais a déjà dépassé son délai (donc non conforme)
-      if (t.status === 'Résolu' || slaStatus === 'dépassé') {
-        totalEvaluated++
-        if (slaStatus !== 'dépassé') {
-          compliantTickets++
-        }
-      }
-    }
-
-    const slaCompliance = totalEvaluated > 0 ? ((compliantTickets / totalEvaluated) * 100).toFixed(1) : 100
+    // Conformité SLA : ne compter QUE les tickets évaluables
+// (résolus dans les temps OU actifs dont le SLA est dépassé)
+const allTickets = db.prepare("SELECT * FROM tickets WHERE archived = 0").all()
+let totalEvaluated = 0
+let compliantTickets = 0
+for (const t of allTickets) {
+  const slaStatus = computeSlaStatus(t)
+  if (t.status === 'Résolu' || slaStatus === 'dépassé') {
+    totalEvaluated++
+    if (slaStatus !== 'dépassé') compliantTickets++
+  }
+}
+const totalTickets = allTickets.length
+const slaCompliance = totalEvaluated > 0
+  ? ((compliantTickets / totalEvaluated) * 100).toFixed(1)
+  : 100
 
     res.json({
       workload, byStatus, byPriority,
