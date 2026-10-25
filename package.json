@@ -1,56 +1,26 @@
 {
-<<<<<<< HEAD
-  "name": "ticket-health",
+  "name": "healthticket-frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
-    "lucide-react": "^1.56.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-markdown": "^10.1.0",
-    "react-router-dom": "^7.18.4",
-    "recharts": "^3.10.1",
-    "remark-gfm": "^4.0.1"
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0",
+    "react-markdown": "^9.0.1",
+    "remark-gfm": "^4.0.0",
+    "recharts": "^2.15.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.3",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.7",
-    "@vitejs/plugin-react": "^6.1.1",
-    "oxlint": "^1.81.0",
-    "tailwindcss": "^4.3.3",
-    "vite": "^8.3.0"
-=======
-  "name": "healthticket-backend",
-  "version": "1.0.0",
-  "description": "Backend API pour HealthTicket",
-  "main": "server.js",
-  "type": "module",
-  "scripts": {
-    "start": "node server.js",
-    "build": "echo 'Build non requis pour le backend'"
-  },
-  "dependencies": {
-    "@libsql/client": "^0.18.0",
-    "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^13.0.3",
-    "cors": "^2.8.6",
-    "dotenv": "^18.0.7",
-    "express": "^5.3.0",
-    "jsonwebtoken": "^9.0.3",
-    "multer": "^2.4.0",
-    "node-cron": "^4.6.0",
-    "nodemailer": "^10.1.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.14"
->>>>>>> 20a0b27d19daec878d9b05f961332fc26bacce15
+    "@tailwindcss/vite": "^4.1.0",
+    "tailwindcss": "^4.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.0"
   }
 }
