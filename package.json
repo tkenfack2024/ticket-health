@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "name": "ticket-health",
   "private": true,
   "version": "0.0.0",
@@ -26,5 +27,30 @@
     "oxlint": "^1.81.0",
     "tailwindcss": "^4.3.3",
     "vite": "^8.3.0"
+=======
+  "name": "healthticket-backend",
+  "version": "1.0.0",
+  "description": "Backend API pour HealthTicket",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "build": "echo 'Build non requis pour le backend'"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.7",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.4.0",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^10.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+>>>>>>> 20a0b27d19daec878d9b05f961332fc26bacce15
   }
 }
