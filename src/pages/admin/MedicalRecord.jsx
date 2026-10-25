@@ -118,7 +118,7 @@ export default function MedicalRecord() {
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <h3 className="font-bold text-slate-800 dark:text-slate-100">
-                      Consultation du {new Date(r.created_at).toLocaleDateString('fr-FR')} à {new Date(r.created_at).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}
+                      Consultation du {r.created_at ? new Date(r.created_at).toLocaleDateString('fr-FR') : '—'} à {r.created_at ? new Date(r.created_at).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '—'}
                     </h3>
                     <p className="text-xs text-slate-500">Par Dr. {r.doctor_name}</p>
                   </div>
