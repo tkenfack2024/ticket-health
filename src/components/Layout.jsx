@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
@@ -20,6 +21,8 @@ import {
   ShieldAlert,
   Clock,
   Pill,
+  Menu, // Ajouté pour le menu mobile
+  X,    // Ajouté pour fermer le menu mobile
 } from 'lucide-react'
 
 import { useAuth } from '../context/AuthContext'
@@ -28,6 +31,7 @@ import ThemeToggle from './ThemeToggle'
 export default function Layout() {
   const { user, isAuthenticated, isAdmin, logout, hasPermission } = useAuth()
   const navigate = useNavigate()
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   const linkClass = ({ isActive }) =>
     `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
@@ -41,6 +45,10 @@ export default function Layout() {
     navigate('/login')
   }
 
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false)
+  }
+
   const roleBadgeClass = {
     admin: 'bg-red-100 text-red-700',
     technicien: 'bg-amber-100 text-amber-700',
@@ -49,9 +57,22 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
+      
+      {/* Overlay sombre sur mobile quand le menu est ouvert */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden" 
+          onClick={closeMobileMenu}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-colors sticky top-0 h-screen overflow-y-auto">
-        <div className="p-6 border-b border-slate-200 dark:border-slate-700">
+      <aside className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-transform duration-300 ease-in-out
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0 md:sticky md:top-0 md:h-screen
+      `}>
+        <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Activity className="w-8 h-8 text-blue-600" />
             <div>
@@ -59,9 +80,13 @@ export default function Layout() {
               <p className="text-xs text-slate-500 dark:text-slate-400">Gestion de tickets</p>
             </div>
           </div>
+          {/* Bouton pour fermer sur mobile */}
+          <button onClick={closeMobileMenu} className="md:hidden text-slate-500 hover:text-slate-700">
+            <X size={24} />
+          </button>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto" onClick={closeMobileMenu}>
           <NavLink to="/" end className={linkClass}>
             <LayoutDashboard size={20} />
             Tableau de bord
@@ -80,8 +105,6 @@ export default function Layout() {
           </NavLink>
 
           {/* --- LIENS AVEC PERMISSIONS GRANULAIRES --- */}
-
-          {/* Fournisseurs (Admin ou permission supplier.manage) */}
           {(isAdmin || hasPermission('supplier.manage')) && (
             <NavLink to="/admin/suppliers" className={linkClass}>
               <Building2 size={20} />
@@ -89,7 +112,6 @@ export default function Layout() {
             </NavLink>
           )}
           
-          {/* Risques (Admin ou permission risk.view) */}
           {(isAdmin || hasPermission('risk.view')) && (
             <NavLink to="/admin/risks" className={linkClass}>
               <ShieldAlert size={20} />
@@ -97,7 +119,6 @@ export default function Layout() {
             </NavLink>
           )}
 
-          {/* Bâtiments (Admin ou permission facility.manage) */}
           {(isAdmin || hasPermission('facility.manage')) && (
             <NavLink to="/admin/facility" className={linkClass}>
               <Building size={20} />
@@ -105,7 +126,6 @@ export default function Layout() {
             </NavLink>
           )}
 
-          {/* Capacité (Admin ou permission stats.view) */}
           {(isAdmin || hasPermission('stats.view')) && (
             <NavLink to="/admin/capacity" className={linkClass}>
               <BarChart3 size={20} />
@@ -113,7 +133,6 @@ export default function Layout() {
             </NavLink>
           )}
 
-          {/* Lits & Tables (Admin ou permission resource.manage) */}
           {(isAdmin || hasPermission('resource.manage')) && (
             <NavLink to="/admin/resources" className={linkClass}>
               <Bed size={20} />
@@ -121,7 +140,6 @@ export default function Layout() {
             </NavLink>
           )}
 
-          {/* Accueil Patients (Admin ou permission patient.read) */}
           {(isAdmin || hasPermission('patient.read')) && (
             <NavLink to="/admin/patients" className={linkClass}>
               <Users size={20} />
@@ -129,7 +147,6 @@ export default function Layout() {
             </NavLink>
           )}
 
-          {/* Salle d'attente & Suivi Médical (Admin ou permission medical.read) */}
           {(isAdmin || hasPermission('medical.read')) && (
             <>
               <NavLink to="/admin/waiting-room" className={linkClass}>
@@ -144,7 +161,6 @@ export default function Layout() {
             </>
           )}
 
-          {/* --- LIENS STRICTEMENT ADMIN --- */}
           {isAdmin && (
             <NavLink to="/admin" end className={linkClass}>
               <Shield size={20} />
@@ -172,8 +188,6 @@ export default function Layout() {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-slate-800 dark:text-slate-100 text-sm truncate">{user.name}</p>
                   <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${roleBadgeClass}`}>
-
-
                     {user.role}
                   </span>
                 </div>
@@ -209,10 +223,24 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Contenu principal */}
-      <main className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-900 transition-colors">
-        <Outlet />
-      </main>
+      {/* Contenu principal (avec barre mobile) */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Barre supérieure mobile */}
+        <header className="md:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-30">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setIsMobileMenuOpen(true)} className="text-slate-600 dark:text-slate-300">
+              <Menu size={24} />
+            </button>
+            <Activity className="w-6 h-6 text-blue-600" />
+            <span className="font-bold text-slate-800 dark:text-slate-100">HealthTicket</span>
+          </div>
+          <ThemeToggle />
+        </header>
+
+        <main className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-900 transition-colors">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }
