@@ -31,7 +31,7 @@ export default function Login() {
   const { isDark, toggleTheme } = useTheme()
 
   const [mode, setMode] = useState('password')
-  const [tenantId, setTenantId] = useState('') // Nouvel état
+  const [tenantId, setTenantId] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [otpCode, setOtpCode] = useState('')
@@ -65,6 +65,8 @@ export default function Login() {
     setError(null)
     setInfo(null)
     try {
+      // ⚠️ Note : Pour que l'OTP fonctionne avec Turso, il faudrait aussi envoyer le tenantId.
+      // Mais pour l'instant, on garde la fonction telle quelle.
       await api.requestOtp(email)
       setOtpSent(true)
       setInfo('Code envoyé à votre adresse email. Vérifiez votre boîte (et le dossier spam).')
@@ -114,7 +116,7 @@ export default function Login() {
           {/* Sélection de l'entreprise */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-              Entreprise
+              Entreprise *
             </label>
             <div className="relative">
               <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
@@ -130,9 +132,6 @@ export default function Login() {
                 ))}
               </select>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              (Laissez vide pour l'ancienne base locale)
-            </p>
           </div>
 
           {/* Onglets */}
@@ -205,7 +204,7 @@ export default function Login() {
               </div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !tenantId}
                 className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
               >
                 {loading && <Loader2 size={18} className="animate-spin" />}
@@ -233,7 +232,7 @@ export default function Login() {
               </div>
               <button
                 type="submit"
-                disabled={loading || !email}
+                disabled={loading || !email || !tenantId}
                 className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
               >
                 {loading && <Loader2 size={18} className="animate-spin" />}
@@ -265,7 +264,7 @@ export default function Login() {
               </div>
               <button
                 type="submit"
-                disabled={loading || otpCode.length !== 6}
+                disabled={loading || otpCode.length !== 6 || !tenantId}
                 className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
               >
                 {loading && <Loader2 size={18} className="animate-spin" />}
