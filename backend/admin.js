@@ -2,6 +2,9 @@ import { Router } from 'express'
 import bcrypt from 'bcryptjs'
 import { authRequired, adminOnly } from './auth.js'
 import multer from 'multer'
+// ✅ AJOUT DES IMPORTS TURSO
+import { createClient } from '@libsql/client'
+import { TENANTS } from './tenants.js'
 
 export function createAdminRouter(db, logAction) {
   const router = Router()
@@ -24,9 +27,31 @@ export function createAdminRouter(db, logAction) {
     console.log('🔧 Migration : colonne reviewed_at ajoutée à logs')
   }
 
-  // ---- GET /api/admin/users ----
-  // Liste tous les utilisateurs
-    router.get('/users', (req, res) => {
+    // ---- GET /api/admin/users ----
+  // Liste tous les utilisateurs (Turso ou SQLite)
+  router.get('/users', async (req, res) => {
+    const { tenantId } = req.user
+
+    // --- MODE TURSO ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const result = await tursoDb.execute(`
+          SELECT id, name, email, phone, role, custom_role, active, created_at
+          FROM users
+          ORDER BY id DESC
+        `)
+        return res.json(result.rows)
+      } catch (err) {
+        console.error('Erreur Turso GET users:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
     const users = db.prepare(`
       SELECT id, name, email, phone, role, custom_role, active, created_at
       FROM users
@@ -39,6 +64,7 @@ export function createAdminRouter(db, logAction) {
   // Créer un nouvel utilisateur
   router.post('/users', async (req, res) => {
     const { name, email, phone, password, role, custom_role } = req.body
+    const { tenantId } = req.user // <-- On récupère le tenantId du token
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Nom, email et mot de passe sont obligatoires' })
@@ -50,6 +76,57 @@ export function createAdminRouter(db, logAction) {
       return res.status(400).json({ error: 'Rôle de base invalide' })
     }
 
+    const hash = bcrypt.hashSync(password, 10)
+
+    // --- MODE TURSO (Multi-tenant) ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        // Vérifier que le custom_role existe si fourni
+        if (custom_role) {
+          const roleExists = await tursoDb.execute({ 
+            sql: 'SELECT id FROM roles WHERE name = ?', 
+            args: [custom_role] 
+          })
+          if (roleExists.rows.length === 0) {
+            return res.status(400).json({ error: 'Ce rôle personnalisé n\'existe pas' })
+          }
+        }
+
+        const existing = await tursoDb.execute({
+          sql: 'SELECT id FROM users WHERE email = ?',
+          args: [email.toLowerCase().trim()]
+        })
+        if (existing.rows.length > 0) {
+          return res.status(409).json({ error: 'Cet email est déjà utilisé' })
+        }
+
+        const result = await tursoDb.execute({
+          sql: `INSERT INTO users (name, email, phone, password_hash, role, custom_role) 
+                VALUES (?, ?, ?, ?, ?, ?)`,
+          args: [name.trim(), email.toLowerCase().trim(), phone || null, hash, role || 'user', custom_role || null]
+        })
+
+        const newUserId = Number(result.lastInsertRowid)
+        const newUserResult = await tursoDb.execute({
+          sql: 'SELECT id, name, email, phone, role, custom_role, active, created_at FROM users WHERE id = ?',
+          args: [newUserId]
+        })
+        const newUser = newUserResult.rows[0]
+
+        logAction(req.user.id, req.user.name, 'create', 'user', newUserId, `Nouvel utilisateur : ${newUser.email} (${newUser.role}) [Turso]`)
+        return res.status(201).json(newUser)
+
+      } catch (err) {
+        console.error('Erreur Turso POST user:', err)
+        return res.status(500).json({ error: 'Erreur lors de la création de l\'utilisateur' })
+      }
+    }
+
+    // --- MODE SQLITE (Si pas de tenantId) ---
     // Vérifier que le custom_role existe si fourni
     if (custom_role) {
       const roleExists = db.prepare('SELECT id FROM roles WHERE name = ?').get(custom_role)
@@ -63,7 +140,6 @@ export function createAdminRouter(db, logAction) {
       return res.status(409).json({ error: 'Cet email est déjà utilisé' })
     }
 
-    const hash = bcrypt.hashSync(password, 10)
     const result = db.prepare(`
       INSERT INTO users (name, email, phone, password_hash, role, custom_role)
       VALUES (?, ?, ?, ?, ?, ?)
