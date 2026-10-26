@@ -1,8 +1,64 @@
 import { useState, useEffect } from 'react'
-import { Bed, Armchair, Plus, Search, Edit2, Trash2, X, Loader2, MapPin } from 'lucide-react'
+import { Bed, Armchair, Plus, Search, Edit2, Trash2, X, Loader2, MapPin, Building } from 'lucide-react'
 import { api } from '../../api'
+// ✅ IMPORT DU COMPOSANT FACILITY (Bâtiments)
+import AdminFacility from './Facility'
 
-export default function AdminResources() {
+// ==========================================
+// COMPOSANT PRINCIPAL AVEC LES 2 ONGLETS
+// ==========================================
+export default function AdminRessources() {
+  const [activeTab, setActiveTab] = useState('lits')
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex-shrink-0 bg-slate-50 dark:bg-slate-900 px-8 pt-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Gestion des Ressources</h1>
+          <p className="text-slate-500 dark:text-slate-400">Bâtiments, salles, lits et tables de travail</p>
+        </div>
+
+        {/* Barre d'onglets horizontale */}
+        <div className="border-b border-slate-200 dark:border-slate-700">
+          <div className="flex gap-1 overflow-x-auto">
+            <button
+              onClick={() => setActiveTab('facility')}
+              className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'facility'
+                  ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Building size={16} /> Bâtiments & Salles
+            </button>
+            <button
+              onClick={() => setActiveTab('lits')}
+              className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'lits'
+                  ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Bed size={16} /> Lits & Tables
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-8 pb-8">
+        <div className="pt-6">
+          {activeTab === 'facility' && <AdminFacility />}
+          {activeTab === 'lits' && <LitsTab />}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ==========================================
+// LE CONTENU DE L'ONGLET "LITS & TABLES"
+// ==========================================
+function LitsTab() {
   const [resources, setResources] = useState([])
   const [rooms, setRooms] = useState([])
   const [loading, setLoading] = useState(true)
@@ -57,10 +113,10 @@ export default function AdminResources() {
     r.unique_code.toLowerCase().includes(search.toLowerCase())
   )
 
-  if (loading) return <div className="p-8 text-slate-500">Chargement...</div>
+  if (loading) return <div className="text-slate-500">Chargement...</div>
 
   return (
-    <div className="p-8">
+    <div>
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -138,10 +194,13 @@ export default function AdminResources() {
       {showBookingsModal && (
         <BookingsListModal onClose={() => setShowBookingsModal(false)} />
       )}
-
     </div>
   )
 }
+
+// ==========================================
+// MODALES (INCHANGÉES)
+// ==========================================
 
 function ResourceModal({ item, rooms, onClose, onSuccess }) {
   const [form, setForm] = useState({
@@ -247,7 +306,6 @@ function BookingsListModal({ onClose }) {
       .catch(() => setLoading(false))
   }, [])
 
-  // Filtrage par nom de patient, nom du réservateur ou code de la ressource
   const filteredBookings = bookings.filter(b => {
     if (!search) return true
     const q = search.toLowerCase()
@@ -265,7 +323,6 @@ function BookingsListModal({ onClose }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
         </div>
 
-        {/* Barre de recherche */}
         <div className="mb-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -304,12 +361,9 @@ function BookingsListModal({ onClose }) {
                     <tr key={b.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                       <td className="px-4 py-3 font-mono font-medium">{b.unique_code}</td>
                       <td className="px-4 py-3">{b.booking_date} ({b.slot})</td>
-                      
-                      {/* NOUVELLE COLONNE : Réservé par */}
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                         {b.user_name || '-'}
                       </td>
-
                       <td className="px-4 py-3 font-medium text-blue-600 dark:text-blue-400">{b.patient_name || '-'}</td>
                       <td className="px-4 py-3">{b.patient_dob || '-'}</td>
                       <td className="px-4 py-3 text-xs">{b.start_date ? `${b.start_date} au ${b.end_date}` : '-'}</td>

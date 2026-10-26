@@ -26,7 +26,6 @@ import PortalCatalog from './pages/portal/Catalog'
 import CatalogService from './pages/portal/CatalogService'
 import MyRequests from './pages/portal/MyRequests'
 import Suppliers from './pages/admin/Suppliers'
-import Facility from './pages/admin/Facility'
 import Capacity from './pages/admin/Capacity'
 import Resources from './pages/admin/Resources'
 import Risks from './pages/admin/Risks'
@@ -69,9 +68,8 @@ function App() {
             {/* Le backend vérifie userHasPermission() sur chaque route    */}
             {/* ========================================================= */}
             <Route path="admin/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
-            <Route path="admin/facility" element={<ProtectedRoute><Facility /></ProtectedRoute>} />
+            <Route path="admin/ressources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
             <Route path="admin/capacity" element={<ProtectedRoute><Capacity /></ProtectedRoute>} />
-            <Route path="admin/resources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
             <Route path="admin/risks" element={<ProtectedRoute><Risks /></ProtectedRoute>} />
             <Route path="admin/patients" element={<ProtectedRoute><Patients /></ProtectedRoute>} />
             <Route path="admin/waiting-room" element={<ProtectedRoute><WaitingRoom /></ProtectedRoute>} />
