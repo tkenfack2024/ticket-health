@@ -441,33 +441,52 @@ export function createResourceRouter(db, logAction) {
 }
 
 // ==================== CRON : LIBÉRATION AUTOMATIQUE ====================
-// Ce cron ne fonctionne que sur SQLite local pour l'instant.
-// Il faudra le modifier pour boucler sur toutes les entreprises Turso si nécessaire.
-
 export function startResourcesCron(db, logAction) {
-  cron.schedule('0 */6 * * *', () => {
-    console.log('⏰ [CRON] Vérification des séjours terminés...')
+  // Toutes les 6 heures
+  cron.schedule('0 */6 * * *', async () => {
+    console.log('⏰ [CRON] Vérification des séjours terminés (Local + Turso)...')
+    
+    // 1. Vérifier la base locale (SQLite)
     try {
-      const expiredBookings = db.prepare(`
+      const expiredLocal = db.prepare(`
         SELECT id, resource_id, patient_name, end_date 
         FROM resource_bookings 
         WHERE end_date IS NOT NULL AND end_date < date('now', 'localtime')
       `).all()
 
-      if (expiredBookings.length === 0) {
-        console.log('✅ [CRON] Aucun séjour expiré.')
-        return
+      if (expiredLocal.length > 0) {
+        const deleteStmt = db.prepare('DELETE FROM resource_bookings WHERE id = ?')
+        for (const booking of expiredLocal) deleteStmt.run(booking.id)
+        logAction(null, 'Système (CRON)', 'cleanup', 'resource_bookings', null, `${expiredLocal.length} séjour(s) local(aux) libéré(s).`)
+        console.log(`✅ [CRON] ${expiredLocal.length} séjour(s) local(aux) libéré(s).`)
       }
-
-      const deleteStmt = db.prepare('DELETE FROM resource_bookings WHERE id = ?')
-      for (const booking of expiredBookings) {
-        deleteStmt.run(booking.id)
-      }
-
-      logAction(null, 'Système (CRON)', 'cleanup', 'resource_bookings', null, `${expiredBookings.length} séjour(s) expiré(s) libéré(s) automatiquement.`)
-      console.log(`✅ [CRON] ${expiredBookings.length} séjour(s) libéré(s).`)
     } catch (err) {
-      console.error('❌ [CRON] Erreur de nettoyage des réservations :', err)
+      console.error('❌ [CRON] Erreur nettoyage local :', err)
+    }
+
+    // 2. Vérifier toutes les bases Turso
+    for (const [tenantId, tenant] of Object.entries(TENANTS)) {
+      try {
+        const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+        
+        const result = await tursoDb.execute(`
+          SELECT id FROM resource_bookings 
+          WHERE end_date IS NOT NULL AND end_date < date('now', 'localtime')
+        `)
+
+        if (result.rows.length > 0) {
+          for (const booking of result.rows) {
+            await tursoDb.execute({
+              sql: 'DELETE FROM resource_bookings WHERE id = ?',
+              args: [booking.id]
+            })
+          }
+          logAction(null, 'Système (CRON)', 'cleanup', 'resource_bookings', null, `${result.rows.length} séjour(s) libéré(s) sur ${tenantId}.`)
+          console.log(`✅ [CRON] ${result.rows.length} séjour(s) libéré(s) sur ${tenantId}.`)
+        }
+      } catch (err) {
+        console.error(`❌ [CRON] Erreur nettoyage Turso (${tenantId}) :`, err.message)
+      }
     }
   })
 
