@@ -38,7 +38,10 @@ const db = new Database('tickets.db')
 db.pragma('foreign_keys = ON')
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: [
+    'http://localhost:5173', 
+    'https://healthticket-frontend.onrender.com'
+  ],
   credentials: true
 }))
 app.use(express.json())
