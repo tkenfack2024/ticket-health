@@ -1,9 +1,72 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { UserPlus, Search, User, Phone, MapPin, Droplet, Activity, Edit2, FileText } from 'lucide-react'
+import { UserPlus, Search, User, Phone, MapPin, Droplet, Activity, Edit2, FileText, Clock, Pill } from 'lucide-react'
 import { api } from '../../api'
 
-export default function AdminPatients() {
+// ✅ IMPORT DES COMPOSANTS POUR LES AUTRES ONGLETS
+import AdminWaitingRoom from './WaitingRoom'
+import AdminMedicalFollowUp from './MedicalFollowUp'
+
+const TABS = [
+  { id: 'patients', label: 'Accueil Patients', icon: User },
+  { id: 'waiting-room', label: "Salle d'attente", icon: Clock },
+  { id: 'followup', label: 'Suivi Médical', icon: Pill },
+]
+
+// ==========================================
+// COMPOSANT PRINCIPAL (AVEC LES ONGLETS)
+// ==========================================
+export default function AdminDpi() {
+  const [activeTab, setActiveTab] = useState('patients')
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex-shrink-0 bg-slate-50 dark:bg-slate-900 px-8 pt-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Gestion DPI</h1>
+          <p className="text-slate-500 dark:text-slate-400">Dossiers patients, salle d'attente et suivi médical</p>
+        </div>
+
+        {/* Barre d'onglets horizontale */}
+        <div className="border-b border-slate-200 dark:border-slate-700">
+          <div className="flex gap-1 overflow-x-auto">
+            {TABS.map((tab) => {
+              const Icon = tab.icon
+              const isActive = activeTab === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                    isActive
+                      ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                      : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Icon size={16} />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-8 pb-8">
+        <div className="pt-6">
+          {activeTab === 'patients' && <PatientsTab />}
+          {activeTab === 'waiting-room' && <AdminWaitingRoom />}
+          {activeTab === 'followup' && <AdminMedicalFollowUp />}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ==========================================
+// LE CONTENU DE L'ONGLET "ACCUEIL PATIENTS"
+// ==========================================
+function PatientsTab() {
   const navigate = useNavigate()
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
@@ -36,7 +99,7 @@ export default function AdminPatients() {
   }
 
   return (
-    <div className="p-8">
+    <div>
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -62,7 +125,6 @@ export default function AdminPatients() {
           {patients.map(p => (
             <div key={p.id} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow flex flex-col">
               
-              {/* En-tête de la carte */}
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-bold">
@@ -85,14 +147,12 @@ export default function AdminPatients() {
                 </div>
               </div>
               
-              {/* Infos */}
               <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 mb-4 flex-1">
                 <p className="flex items-center gap-2"><Activity size={14} /> Né(e) le {new Date(p.dob).toLocaleDateString('fr-FR')}</p>
                 {p.phone && <p className="flex items-center gap-2"><Phone size={14} /> {p.phone}</p>}
                 {p.address && <p className="flex items-center gap-2"><MapPin size={14} /> {p.address}</p>}
               </div>
 
-              {/* Actions */}
               <div className="pt-3 border-t border-slate-100 dark:border-slate-700 space-y-2">
                 <button 
                   onClick={() => navigate(`/admin/patients/${p.id}/records`)}
@@ -124,6 +184,9 @@ export default function AdminPatients() {
   )
 }
 
+// ==========================================
+// MODALE PATIENT (INCHANGÉE)
+// ==========================================
 function PatientModal({ item, onClose, onSuccess }) {
   const [form, setForm] = useState({
     first_name: item?.first_name || '', 
@@ -138,7 +201,7 @@ function PatientModal({ item, onClose, onSuccess }) {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [deleting, setDeleting] = useState(false) // <-- ICI, dans PatientModal
+  const [deleting, setDeleting] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()

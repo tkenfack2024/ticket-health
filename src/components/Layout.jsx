@@ -2,13 +2,12 @@ import { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Ticket, PlusCircle, Activity, LogOut, LogIn, UserPlus,
-  Shield, BookOpen, ExternalLink, Bell, Building2, Building, BarChart3,
-  Bed, Users, ShieldAlert, Clock, Pill, Menu, X, ChevronDown, ChevronRight
+  Shield, BookOpen, ExternalLink, Bell, Building, Bed, Users, Clock, Pill,
+  Menu, X, ChevronDown, ChevronRight
 } from 'lucide-react'
 
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
-// ✅ IMPORT DU HOOK DE NOTIFICATION
 import { useSystemNotifications } from '../hooks/useSystemNotifications'
 
 export default function Layout() {
@@ -17,17 +16,14 @@ export default function Layout() {
   const location = useLocation()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   
-  // ✅ ACTIVATION DES NOTIFICATIONS WINDOWS EN ARRIÈRE-PLAN
   useSystemNotifications(user)
 
-  // État pour gérer l'ouverture des menus accordéons
   const [openMenus, setOpenMenus] = useState({
     dpi: false,
     ressources: false,
     admin: false,
   })
 
-  // Ouvre automatiquement le bon menu selon l'URL actuelle
   useEffect(() => {
     if (location.pathname.includes('/admin/patients') || 
         location.pathname.includes('/admin/waiting-room') || 
@@ -65,7 +61,6 @@ export default function Layout() {
     user: 'bg-blue-100 text-blue-700',
   }[user?.role] || 'bg-slate-100 text-slate-600'
 
-  // Composant réutilisable pour les menus accordéons
   const AccordionMenu = ({ title, icon: Icon, isOpen, onToggle, children }) => (
     <div className="mb-1">
       <button
@@ -112,7 +107,6 @@ export default function Layout() {
         </div>
 
         <nav className="flex-1 p-3 overflow-y-auto" onClick={closeMobileMenu}>
-          {/* Liens principaux */}
           <div className="space-y-1 mb-4">
             <NavLink to="/" end className={linkClass}>
               <LayoutDashboard size={18} /> Tableau de bord
@@ -129,66 +123,26 @@ export default function Layout() {
           </div>
 
           <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-1">
-            {/* Menu Gestion DPI */}
+            
+                       {/* Menu Gestion DPI (Lien direct) */}
             {(isAdmin || hasPermission('patient.read') || hasPermission('medical.read')) && (
-              <AccordionMenu 
-                title="Gestion DPI" 
-                icon={Users} 
-                isOpen={openMenus.dpi} 
-                onToggle={() => toggleMenu('dpi')}
-              >
-                {(isAdmin || hasPermission('patient.read')) && (
-                  <NavLink to="/admin/patients" className={linkClass}>
-                    <Users size={18} /> Accueil Patients
-                  </NavLink>
-                )}
-                {(isAdmin || hasPermission('medical.read')) && (
-                  <>
-                    <NavLink to="/admin/waiting-room" className={linkClass}>
-                      <Clock size={18} /> Salle d'attente
-                    </NavLink>
-                    <NavLink to="/admin/medical-followup" className={linkClass}>
-                      <Pill size={18} /> Suivi Médical
-                    </NavLink>
-                  </>
-                )}
-              </AccordionMenu>
+              <NavLink to="/admin/patients" className={linkClass}>
+                <Users size={18} /> Gestion DPI
+              </NavLink>
             )}
 
-            {/* Menu Gestion des Ressources */}
+                        {/* Menu Gestion des Ressources (Lien direct) */}
             {(isAdmin || hasPermission('facility.manage') || hasPermission('resource.manage')) && (
-              <AccordionMenu 
-                title="Gestion des Ressources" 
-                icon={Building} 
-                isOpen={openMenus.ressources} 
-                onToggle={() => toggleMenu('ressources')}
-              >
-                {(isAdmin || hasPermission('facility.manage')) && (
-                  <NavLink to="/admin/facility" className={linkClass}>
-                    <Building size={18} /> Bâtiments & Salles
-                  </NavLink>
-                )}
-                {(isAdmin || hasPermission('resource.manage')) && (
-                  <NavLink to="/admin/resources" className={linkClass}>
-                    <Bed size={18} /> Lits & Tables
-                  </NavLink>
-                )}
-              </AccordionMenu>
+              <NavLink to="/admin/ressources" className={linkClass}>
+                <Building size={18} /> Gestion des Ressources
+              </NavLink>
             )}
 
-            {/* Menu Administration */}
+                        {/* Menu Administration (Lien direct) */}
             {isAdmin && (
-              <AccordionMenu 
-                title="Administration" 
-                icon={Shield} 
-                isOpen={openMenus.admin} 
-                onToggle={() => toggleMenu('admin')}
-              >
-                <NavLink to="/admin" end className={linkClass}>
-                  <LayoutDashboard size={18} /> Vue d'ensemble
-                </NavLink>
-                {/* ✅ LES 3 LIENS ONT ÉTÉ RETIRÉS ICI */}
-              </AccordionMenu>
+              <NavLink to="/admin" end className={linkClass}>
+                <Shield size={18} /> Administration
+              </NavLink>
             )}
           </div>
 

@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Bed, Armchair, Plus, Search, Edit2, Trash2, X, Loader2, MapPin, Building } from 'lucide-react'
 import { api } from '../../api'
-// ✅ IMPORT DU COMPOSANT FACILITY (Bâtiments)
+// ✅ IMPORT DU COMPOSANT FACILITY
 import AdminFacility from './Facility'
 
 // ==========================================
-// COMPOSANT PRINCIPAL AVEC LES 2 ONGLETS
+// COMPOSANT PRINCIPAL (AVEC LES ONGLETS)
 // ==========================================
 export default function AdminRessources() {
   const [activeTab, setActiveTab] = useState('lits')

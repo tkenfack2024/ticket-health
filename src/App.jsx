@@ -25,16 +25,17 @@ import PortalKbArticle from './pages/portal/KbArticle'
 import PortalCatalog from './pages/portal/Catalog'
 import CatalogService from './pages/portal/CatalogService'
 import MyRequests from './pages/portal/MyRequests'
-import Suppliers from './pages/admin/Suppliers'
-import Capacity from './pages/admin/Capacity'
-import Resources from './pages/admin/Resources'
-import Risks from './pages/admin/Risks'
 import Desksharing from './pages/portal/Desksharing'
 import Patients from './pages/admin/Patients'
+import Resources from './pages/admin/Resources'
 import WaitingRoom from './pages/admin/WaitingRoom'
-import MedicalRecord from './pages/admin/MedicalRecord'
 import MedicalFollowUp from './pages/admin/MedicalFollowUp'
+import MedicalRecord from './pages/admin/MedicalRecord'
 
+// ✅ IMPORT DES 3 COMPOSANTS POUR L'ADMINISTRATION
+import Risks from './pages/admin/Risks'
+import Suppliers from './pages/admin/Suppliers'
+import Capacity from './pages/admin/Capacity'
 
 function App() {
   return (
@@ -65,19 +66,26 @@ function App() {
 
             {/* ========================================================= */}
             {/* ROUTES À PERMISSIONS GRANULAIRES (pas de adminOnly)        */}
-            {/* Le backend vérifie userHasPermission() sur chaque route    */}
             {/* ========================================================= */}
-            <Route path="admin/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
-            <Route path="admin/ressources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
-            <Route path="admin/capacity" element={<ProtectedRoute><Capacity /></ProtectedRoute>} />
-            <Route path="admin/risks" element={<ProtectedRoute><Risks /></ProtectedRoute>} />
+            
+            {/* GESTION DPI */}
             <Route path="admin/patients" element={<ProtectedRoute><Patients /></ProtectedRoute>} />
             <Route path="admin/waiting-room" element={<ProtectedRoute><WaitingRoom /></ProtectedRoute>} />
-            <Route path="admin/patients/:id/records" element={<ProtectedRoute><MedicalRecord /></ProtectedRoute>} />
             <Route path="admin/medical-followup" element={<ProtectedRoute><MedicalFollowUp /></ProtectedRoute>} />
+            <Route path="admin/patients/:id/records" element={<ProtectedRoute><MedicalRecord /></ProtectedRoute>} />
+
+            {/* GESTION DES RESSOURCES */}
+            <Route path="admin/ressources" element={<ProtectedRoute><Resources /></ProtectedRoute>} />
+
+            {/* AUTRES */}
             <Route path="admin/problems/:id" element={<ProtectedRoute><ProblemDetail /></ProtectedRoute>} />
             <Route path="admin/changes/:id" element={<ProtectedRoute><ChangeDetail /></ProtectedRoute>} />
             <Route path="cmdb/:id" element={<ProtectedRoute><CmdbDetail /></ProtectedRoute>} />
+
+            {/* ✅ NOUVELLES ROUTES POUR LES 3 ONGLETS */}
+            <Route path="admin/risks" element={<ProtectedRoute><Risks /></ProtectedRoute>} />
+            <Route path="admin/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
+            <Route path="admin/capacity" element={<ProtectedRoute><Capacity /></ProtectedRoute>} />
 
             {/* ========================================================= */}
             {/* ROUTES STRICTEMENT ADMIN (adminOnly conservé)              */}
