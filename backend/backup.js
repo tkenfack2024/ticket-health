@@ -70,13 +70,10 @@ export async function createBackup(db, { type = 'auto', tenantId = null, user = 
 
   try {
     if (tenantId) {
-      // 🟢 BACKUP TURSO (Dump SQL basique)
       const tenant = TENANTS[tenantId]
       if (!tenant) throw new Error('Tenant introuvable')
       
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
-      // Requête basique pour simuler un dump (en V1 on sauvegarde les tables principales)
-      // Pour un vrai dump complet, il faudrait boucler sur toutes les tables.
       const tables = ['users', 'tickets', 'patients', 'medical_records', 'comments']
       let sqlDump = `-- Backup ${tenantId} - ${timestamp}\n\n`
       
@@ -84,7 +81,6 @@ export async function createBackup(db, { type = 'auto', tenantId = null, user = 
         const res = await tursoDb.execute(`SELECT * FROM ${table}`)
         if (res.rows.length > 0) {
           sqlDump += `-- Données de la table ${table}\n`
-          // On génère des requêtes INSERT simples (attention: les BLOB ne sont pas gérés ici en V1)
           for (const row of res.rows) {
              const keys = Object.keys(row).join(', ')
              const values = Object.values(row).map(v => typeof v === 'string' ? `'${v.replace(/'/g, "''")}'` : v).join(', ')
@@ -94,7 +90,6 @@ export async function createBackup(db, { type = 'auto', tenantId = null, user = 
       }
       fs.writeFileSync(filepath, sqlDump, 'utf-8')
     } else {
-      // 🟢 BACKUP SQLITE LOCAL
       if (fs.existsSync('tickets.db')) {
         fs.copyFileSync('tickets.db', filepath)
       } else {
@@ -108,14 +103,11 @@ export async function createBackup(db, { type = 'auto', tenantId = null, user = 
       VALUES (?, ?, ?, ?, ?, 'success', ?, ?)
     `).run(filename, filepath, stats.size, type, tenantId, user?.id || null, user?.name || null)
 
-    // Mettre à jour la config
     if (!tenantId) {
       db.prepare(`UPDATE backup_config SET last_backup_at = datetime('now', 'localtime'), last_backup_status = 'success' WHERE id = 1`).run()
     }
 
-    // Rotation
     rotateBackups(db, tenantId)
-
     return { id: result.lastInsertRowid, filename }
   } catch (err) {
     console.error(`Erreur création backup (${tenantId || 'local'}):`, err.message)
@@ -166,7 +158,6 @@ export function deleteBackup(db, backupId) {
 
 // ==================== CRON ====================
 export function startBackupCron(db, logAction) {
-  // Tourne toutes les heures pour vérifier si un backup est nécessaire
   cron.schedule('0 * * * *', async () => {
     const config = getBackupConfig(db)
     if (!config || !config.enabled) return
@@ -178,14 +169,10 @@ export function startBackupCron(db, logAction) {
     if (hoursSinceLast >= config.interval_hours) {
       console.log('⏰ Cron : Lancement des sauvegardes automatiques...')
       try {
-        // 1. Backup local
         await createBackup(db, { type: 'auto' })
-        
-        // 2. Backup de tous les tenants Turso
         for (const tenantId of Object.keys(TENANTS)) {
           await createBackup(db, { type: 'auto', tenantId })
         }
-        
         if (logAction) logAction(null, 'Système', 'backup_auto', 'backup', null, 'Sauvegarde automatique effectuée')
       } catch (err) {
         console.error('Erreur lors des backups automatiques:', err)
@@ -195,17 +182,77 @@ export function startBackupCron(db, logAction) {
   console.log('⏰ Cron de sauvegarde démarré (vérification toutes les heures)')
 }
 
+// ==================== RESTAURATION ====================
+export async function restoreBackup(db, backupId, user, logAction) {
+  const backup = db.prepare('SELECT * FROM backups WHERE id = ?').get(backupId)
+  
+  if (!backup) throw new Error('Sauvegarde introuvable')
+  if (!fs.existsSync(backup.filepath)) throw new Error('Fichier de sauvegarde introuvable sur le disque')
+  if (backup.status !== 'success') throw new Error('Impossible de restaurer une sauvegarde en échec')
+
+  // 🛡️ 1. Backup de sécurité (pre-restore)
+  await createBackup(db, { 
+    type: 'pre-restore', 
+    tenantId: backup.tenant_id, 
+    user 
+  })
+
+  // 2. Logique de restauration selon la cible
+  if (!backup.tenant_id) {
+    const pendingPath = path.join(process.cwd(), 'tickets.db.restore-pending')
+    fs.copyFileSync(backup.filepath, pendingPath)
+    
+    if (logAction) {
+      logAction(user.id, user.name, 'restore', 'backup', backup.id, `Restauration locale préparée (redémarrage requis)`)
+    }
+    return { 
+      success: true, 
+      requires_restart: true,
+      message: "Sauvegarde prête. Le serveur doit redémarrer (sur Render, allez dans Manual Deploy) pour appliquer la restauration."
+    }
+  } else {
+    const tenant = TENANTS[backup.tenant_id]
+    if (!tenant) throw new Error('Tenant Turso introuvable')
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    const sqlContent = fs.readFileSync(backup.filepath, 'utf-8')
+    const tablesToClear = ['comments', 'ticket_cis', 'medical_records', 'prescriptions', 'exam_results', 'visits', 'patients', 'tickets', 'users']
+    
+    for (const table of tablesToClear) {
+      try { await tursoDb.execute(`DELETE FROM ${table}`) } catch (e) { console.warn(`Impossible de vider ${table}`) }
+    }
+
+    const statements = sqlContent.split(';').filter(s => s.trim().length > 0)
+    for (const stmt of statements) {
+      if (stmt.startsWith('--')) continue
+      try {
+        await tursoDb.execute(stmt)
+      } catch (e) {
+        console.error(`Erreur sur la requête : ${stmt.substring(0, 50)}...`, e.message)
+        throw new Error(`Erreur lors du rejeu SQL : ${e.message}`)
+      }
+    }
+
+    if (logAction) {
+      logAction(user.id, user.name, 'restore', 'backup', backup.id, `Restauration Turso effectuée depuis backup du ${backup.created_at}`)
+    }
+    return { 
+      success: true, 
+      requires_restart: false,
+      message: "Restauration Turso effectuée avec succès."
+    }
+  }
+}
+
 // ==================== ROUTES API ====================
 export function createBackupRouter(db, logAction) {
   const router = Router()
   router.use(authRequired, adminOnly)
 
-  // GET /api/admin/backups/config
   router.get('/config', (req, res) => {
     res.json(getBackupConfig(db))
   })
 
-  // PATCH /api/admin/backups/config
   router.patch('/config', (req, res) => {
     try {
       const config = updateBackupConfig(db, req.body)
@@ -214,13 +261,11 @@ export function createBackupRouter(db, logAction) {
     } catch (err) { res.status(500).json({ error: err.message }) }
   })
 
-  // GET /api/admin/backups
   router.get('/', (req, res) => {
     const tenantId = req.query.tenant_id || null
     res.json(listBackups(db, tenantId))
   })
 
-  // POST /api/admin/backups (manuel)
   router.post('/', async (req, res) => {
     try {
       const { tenant_id } = req.body
@@ -230,7 +275,6 @@ export function createBackupRouter(db, logAction) {
     } catch (err) { res.status(500).json({ error: err.message }) }
   })
 
-  // DELETE /api/admin/backups/:id
   router.delete('/:id', (req, res) => {
     try {
       deleteBackup(db, req.params.id)
@@ -239,13 +283,23 @@ export function createBackupRouter(db, logAction) {
     } catch (err) { res.status(500).json({ error: err.message }) }
   })
 
-  // GET /api/admin/backups/:id/download
   router.get('/:id/download', (req, res) => {
     const backup = db.prepare('SELECT * FROM backups WHERE id = ?').get(req.params.id)
     if (!backup || !fs.existsSync(backup.filepath)) {
       return res.status(404).json({ error: 'Fichier non trouvé' })
     }
     res.download(backup.filepath, backup.filename)
+  })
+
+  // ✅ LA ROUTE DE RESTAURATION EST MAINTENANT BIEN PLACÉE
+  router.post('/:id/restore', async (req, res) => {
+    try {
+      const result = await restoreBackup(db, req.params.id, req.user, logAction)
+      res.json(result)
+    } catch (err) {
+      console.error('Erreur lors de la restauration:', err)
+      res.status(500).json({ error: err.message })
+    }
   })
 
   return router

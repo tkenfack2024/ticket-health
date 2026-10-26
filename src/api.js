@@ -689,4 +689,8 @@ adminGetAssets: (params = {}) => {
     return `${apiUrl}/api/admin/backups/${id}/download?token=${token}`
   },
 
+    backupRestore: (id) => request(`/api/admin/backups/${id}/restore`, {
+    method: 'POST',
+  }),
+
 }

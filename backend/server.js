@@ -3,6 +3,9 @@ import cors from 'cors'
 import Database from 'better-sqlite3'
 import bcrypt from 'bcryptjs'
 import 'dotenv/config'
+import fs from 'fs'
+import path from 'path'
+
 import { createAuthRouter, authRequired, adminOnly } from './auth.js'
 import { testEmailConnection } from './email.js'
 import { createAdminRouter } from './admin.js'
@@ -30,15 +33,28 @@ import { initRiskTables, createRiskRouter } from './risks.js'
 import { initFacilityTables, createFacilityRouter } from './facility.js'
 import { initResourceTables, createResourceRouter, startResourcesCron } from './resources.js'
 import { initPatientTables, createPatientRouter } from './patients.js'
+import { initBackupTables, createBackupRouter, startBackupCron } from './backup.js'
+
+// ✅ IMPORTS UNIQUES POUR TURSO
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
-import { initBackupTables, createBackupRouter, startBackupCron } from './backup.js'
+
+// 🛡️ Vérification d'une restauration en attente au démarrage
+const pendingRestorePath = path.join(process.cwd(), 'tickets.db.restore-pending')
+if (fs.existsSync(pendingRestorePath)) {
+  console.log('🔄 Restauration en attente détectée. Application...')
+  try {
+    fs.copyFileSync(pendingRestorePath, path.join(process.cwd(), 'tickets.db'))
+    fs.unlinkSync(pendingRestorePath)
+    console.log('✅ Restauration SQLite appliquée avec succès.')
+  } catch (err) {
+    console.error('❌ Échec de la restauration au démarrage :', err)
+  }
+}
 
 const app = express()
 const db = new Database('tickets.db')
 db.pragma('foreign_keys = ON')
-
-
 
 app.use(cors({
   origin: [

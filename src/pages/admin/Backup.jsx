@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Database, Save, Download, Trash2, RefreshCw, CheckCircle, AlertTriangle, Loader2, Server } from 'lucide-react'
+import { Database, RotateCcw, Save, Download, Trash2, RefreshCw, CheckCircle, AlertTriangle, Loader2, Server } from 'lucide-react'
 import { api } from '../../api'
 
 export default function AdminBackup() {
@@ -9,6 +9,8 @@ export default function AdminBackup() {
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState(null)
   const [successMsg, setSuccessMsg] = useState(null)
+  const [restoreTarget, setRestoreTarget] = useState(null)
+  const [restoreLoading, setRestoreLoading] = useState(false)
 
   const load = async () => {
     try {
@@ -66,6 +68,22 @@ export default function AdminBackup() {
       await load()
     } catch (err) {
       alert(err.message)
+    }
+  }
+
+  const handleRestore = async () => {
+    if (!restoreTarget) return
+    setRestoreLoading(true)
+    setError(null)
+    try {
+      const res = await api.backupRestore(restoreTarget.id)
+      setSuccessMsg(res.message)
+      setRestoreTarget(null)
+      await load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setRestoreLoading(false)
     }
   }
 
@@ -212,6 +230,13 @@ export default function AdminBackup() {
                       >
                         <Download size={16} />
                       </a>
+                      <button
+                        onClick={() => setRestoreTarget(b)}
+                        className={`p-1.5 rounded ${b.status === 'success' ? 'text-amber-600 hover:bg-amber-50' : 'text-slate-300 cursor-not-allowed pointer-events-none'}`}
+                        title="Restaurer cette sauvegarde"
+                      >
+                        <RotateCcw size={16} />
+                      </button>
                       <button onClick={() => handleDelete(b.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Supprimer">
                         <Trash2 size={16} />
                       </button>
@@ -228,11 +253,46 @@ export default function AdminBackup() {
         <p className="flex items-start gap-2">
           <AlertTriangle size={18} className="flex-shrink-0 mt-0.5" />
           <span>
-            <strong>Note pour la V2 :</strong> La fonctionnalité de restauration (Restore) sera ajoutée dans une prochaine version. Pour l'instant, vous pouvez télécharger les sauvegardes et les conserver en lieu sûr.
+            <strong>Note :</strong> La restauration locale (SQLite) nécessite un redémarrage du serveur pour s'appliquer. La restauration Turso est immédiate.
           </span>
         </p>
       </div>
 
+      {/* ✅ MODALE DE RESTAURATION (bien placée à l'intérieur du return principal) */}
+      {restoreTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="text-amber-600 dark:text-amber-400" size={24} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800 dark:text-slate-100">Restaurer la sauvegarde ?</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Cette action est irréversible.</p>
+              </div>
+            </div>
+            
+            <div className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3 mb-4 text-sm">
+              <p className="text-slate-700 dark:text-slate-300">Vous allez restaurer le backup du <strong>{restoreTarget.created_at}</strong>.</p>
+              <p className="text-slate-700 dark:text-slate-300 mt-1">Cible : <strong>{restoreTarget.tenant_id || 'Local (SQLite)'}</strong></p>
+              {!restoreTarget.tenant_id && (
+                <p className="text-amber-600 dark:text-amber-400 mt-2 font-medium text-xs">
+                  ⚠️ Un redémarrage du serveur sera nécessaire pour appliquer cette restauration locale.
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={handleRestore} disabled={restoreLoading} className="flex-1 bg-amber-600 text-white py-2 rounded-lg hover:bg-amber-700 font-medium text-sm disabled:opacity-50">
+                {restoreLoading ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Confirmer la restauration'}
+              </button>
+              <button onClick={() => setRestoreTarget(null)} disabled={restoreLoading} className="flex-1 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 text-sm disabled:opacity-50">
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
