@@ -34,36 +34,10 @@ import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 
 const app = express()
+const db = new Database('tickets.db')
+db.pragma('foreign_keys = ON')
 
-// 🛡️ En production (Render), on n'utilise PAS SQLite local
-let db = null
 
-if (process.env.NODE_ENV !== 'production') {
-  db = new Database('tickets.db')
-  db.pragma('foreign_keys = ON')
-  console.log('💾 Mode développement : SQLite local activé')
-} else {
-  console.log('🌍 Mode production : Utilisation exclusive de Turso (SQLite désactivé)')
-  
-  // Fausse base de données pour éviter les crashs au démarrage
-  db = {
-    prepare: (sql) => {
-      return {
-        all: () => [],
-        get: () => {
-          // Si le code cherche un COUNT, on renvoie 0 pour éviter le crash
-          if (sql.includes('COUNT')) return { c: 0 }
-          return null
-        },
-        run: () => ({ lastInsertRowid: 0, changes: 0 })
-      }
-    },
-    exec: () => {},
-    pragma: () => {},
-  }
-}
-
-// ✅ SUPPRIMEZ la ligne db.pragma('foreign_keys = ON') qui était ici
 
 app.use(cors({
   origin: [
