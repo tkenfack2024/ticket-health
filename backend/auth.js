@@ -234,8 +234,8 @@ export function createAuthRouter(db, logAction) {
         })
         const user = result.rows[0]
         
-        if (!user || !user.active) {
-          return res.json({ success: true, message: 'Si le compte existe, un code a été envoyé' })
+                if (!user || !user.active) {
+          return res.status(404).json({ error: "Aucun compte trouvé avec cet email dans cette entreprise." })
         }
 
         const code = String(Math.floor(100000 + Math.random() * 900000))
@@ -258,8 +258,8 @@ export function createAuthRouter(db, logAction) {
 
     // --- Mode SQLite ---
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim())
-    if (!user || !user.active) {
-      return res.json({ success: true, message: 'Si le compte existe, un code a été envoyé' })
+        if (!user || !user.active) {
+      return res.status(404).json({ error: "Aucun compte trouvé avec cet email dans cette entreprise." })
     }
 
     const code = String(Math.floor(100000 + Math.random() * 900000))
