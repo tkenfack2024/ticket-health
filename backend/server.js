@@ -37,6 +37,10 @@ const app = express()
 const db = new Database('tickets.db')
 db.pragma('foreign_keys = ON')
 
+if (process.env.NODE_ENV === 'production' && !process.env.TURSO_DATABASE_URL) {
+  console.warn("⚠️ ATTENTION : En production, vous devriez utiliser Turso, pas SQLite local.")
+}
+
 app.use(cors({
   origin: [
     'http://localhost:5173', 
