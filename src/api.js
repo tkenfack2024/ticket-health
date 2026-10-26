@@ -660,6 +660,33 @@ adminGetAssets: (params = {}) => {
   examsGetPending: () => request('/api/patients/exams/pending'),
 
   // Statistiques de capacité
-  getCapacityStats: () => request('/api/stats/capacity')
+  getCapacityStats: () => request('/api/stats/capacity'),
+
+  // ============ BACKUPS ============
+  backupGetConfig: () => request('/api/admin/backups/config'),
+  backupUpdateConfig: (data) => request('/api/admin/backups/config', {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  backupList: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/admin/backups${qs ? '?' + qs : ''}`)
+  },
+  backupCreate: (data) => request('/api/admin/backups', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  backupDelete: (id) => request(`/api/admin/backups/${id}`, {
+    method: 'DELETE',
+  }),
+  backupDownloadUrl: (id) => {
+    const token = localStorage.getItem('ht_token')
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+    return `${apiUrl}/api/admin/backups/${id}/download?token=${token}`
+  },
 
 }

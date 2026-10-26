@@ -32,6 +32,7 @@ import { initResourceTables, createResourceRouter, startResourcesCron } from './
 import { initPatientTables, createPatientRouter } from './patients.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { initBackupTables, createBackupRouter, startBackupCron } from './backup.js'
 
 const app = express()
 const db = new Database('tickets.db')
@@ -299,6 +300,7 @@ initRiskTables(db)
 initFacilityTables(db)
 initResourceTables(db)
 initPatientTables(db)
+initBackupTables(db)
 
 // ==================== SEED : Permissions ====================
 
@@ -372,6 +374,7 @@ app.use('/api/risks', createRiskRouter(db, logAction))
 app.use('/api/facility', createFacilityRouter(db, logAction))
 app.use('/api/resources', createResourceRouter(db, logAction))
 app.use('/api/patients', createPatientRouter(db, logAction))
+app.use('/api/admin/backups', createBackupRouter(db, logAction))
 
 initCatalogTables(db)
 initChangeTables(db)
@@ -1268,4 +1271,5 @@ app.listen(PORT, async () => {
   try { logStartup(db, logAction) } catch (err) { console.error('Erreur log startup :', err) }
   try { startSlaCron(db, logAction) } catch (err) { console.error('Erreur démarrage cron SLA :', err) }
   try { startResourcesCron(db, logAction) } catch (err) { console.error('Erreur démarrage cron Ressources :', err) }
+  try { startBackupCron(db, logAction) } catch (err) { console.error('Erreur démarrage cron Backup :', err) }
 })

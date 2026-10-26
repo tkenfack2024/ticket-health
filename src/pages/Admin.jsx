@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield, FileText, Network, Bug, ShoppingBag, GitBranch, ShieldAlert, Building2, BarChart3 } from 'lucide-react'
+// ✅ AJOUT DE L'ICÔNE DATABASE ICI
+import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield, FileText, Network, Bug, ShoppingBag, GitBranch, ShieldAlert, Building2, BarChart3, Database } from 'lucide-react'
+
 import AdminUsers from './admin/Users'
 import AdminModules from './admin/Modules'
 import AdminAssets from './admin/Assets'
@@ -12,11 +14,12 @@ import AdminCmdb from './admin/Cmdb'
 import AdminProblems from './admin/Problems'
 import AdminCatalog from './admin/Catalog'
 import AdminChanges from './admin/Changes'
-
-// ✅ IMPORT DES 3 NOUVEAUX COMPOSANTS
 import AdminRisks from './admin/Risks'
 import AdminSuppliers from './admin/Suppliers'
 import AdminCapacity from './admin/Capacity'
+
+// ✅ AJOUT DE L'IMPORT DU COMPOSANT BACKUP ICI
+import AdminBackup from './admin/Backup'
 
 const TABS = [
   { id: 'users', label: 'Utilisateurs', icon: Users },
@@ -31,10 +34,10 @@ const TABS = [
   { id: 'archive', label: 'Archive', icon: Archive },
   { id: 'gdpr', label: 'RGPD', icon: FileText },
   { id: 'changes', label: 'Changements', icon: GitBranch },
-  // ✅ AJOUT DES 3 NOUVEAUX ONGLETS
   { id: 'risks', label: 'Risques', icon: ShieldAlert },
   { id: 'suppliers', label: 'Fournisseurs', icon: Building2 },
   { id: 'capacity', label: 'Capacité & Perf', icon: BarChart3 },
+  { id: 'backups', label: 'Backups', icon: Database },
 ]
 
 export default function Admin() {
@@ -89,10 +92,10 @@ export default function Admin() {
           {activeTab === 'archive' && <AdminArchive />}
           {activeTab === 'gdpr' && <AdminGdpr />}
           {activeTab === 'changes' && <AdminChanges />}
-          {/* ✅ AJOUT DES RENDU DES 3 NOUVEAUX ONGLETS */}
           {activeTab === 'risks' && <AdminRisks />}
           {activeTab === 'suppliers' && <AdminSuppliers />}
           {activeTab === 'capacity' && <AdminCapacity />}
+          {activeTab === 'backups' && <AdminBackup />}
         </div>
       </div>
     </div>
