@@ -84,8 +84,17 @@ export default function ProfileNotifications() {
     }
   }
 
-  if (loading) return <div className="p-8 text-slate-500 dark:text-slate-400">Chargement...</div>
-  if (!prefs) return null
+  if (loading) return <div className="p-8 text-slate-500 dark:text-slate-400">Chargement des préférences...</div>
+
+if (!prefs) {
+  return (
+    <div className="p-8 max-w-3xl">
+      <div className="bg-red-50 text-red-600 p-4 rounded-lg mt-4 border border-red-200">
+        Impossible de charger les préférences. Veuillez rafraîchir la page ou contacter un administrateur.
+      </div>
+    </div>
+  )
+}
 
   return (
     <div className="p-8 max-w-3xl">

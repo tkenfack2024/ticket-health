@@ -8,6 +8,8 @@ import {
 
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
+// ✅ IMPORT DU HOOK DE NOTIFICATION
+import { useSystemNotifications } from '../hooks/useSystemNotifications'
 
 export default function Layout() {
   const { user, isAuthenticated, isAdmin, logout, hasPermission } = useAuth()
@@ -15,6 +17,9 @@ export default function Layout() {
   const location = useLocation()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   
+  // ✅ ACTIVATION DES NOTIFICATIONS WINDOWS EN ARRIÈRE-PLAN
+  useSystemNotifications(user)
+
   // État pour gérer l'ouverture des menus accordéons
   const [openMenus, setOpenMenus] = useState({
     dpi: false,

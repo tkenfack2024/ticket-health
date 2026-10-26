@@ -372,9 +372,48 @@ initCatalogTables(db)
 initChangeTables(db)
 initSupplierTables(db)
 
-// ==================== ROUTES : NOTIFICATIONS ====================
+// ==================== NOTIFICATIONS : PRÉFÉRENCES ====================
 
-app.get('/api/notifications/preferences', authRequired, (req, res) => {
+app.get('/api/notifications/preferences', authRequired, async (req, res) => {
+  const { tenantId } = req.user
+
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      // 1. On cherche si l'utilisateur a déjà des préférences
+      let result = await tursoDb.execute({
+        sql: 'SELECT * FROM user_notifications_preferences WHERE user_id = ?',
+        args: [req.user.id]
+      })
+      let prefs = result.rows[0]
+
+      // 2. Si la ligne n'existe pas (nouvel utilisateur), on la crée !
+      if (!prefs) {
+                await tursoDb.execute({
+          sql: `INSERT INTO user_notifications_preferences 
+                (user_id, notify_ticket_assigned, notify_status_changed, notify_new_comment, notify_sla_exceeded) 
+                VALUES (?, 1, 1, 1, 1)`,
+          args: [req.user.id]
+        })
+        // On recharge les données fraîchement créées
+        result = await tursoDb.execute({
+          sql: 'SELECT * FROM user_notifications_preferences WHERE user_id = ?',
+          args: [req.user.id]
+        })
+        prefs = result.rows[0]
+      }
+
+      return res.json(prefs)
+    } catch (err) {
+      console.error('Erreur Turso GET notification prefs:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  // --- MODE SQLITE ---
   try {
     const prefs = getPreferences(db, req.user.id)
     res.json(prefs)
@@ -383,13 +422,136 @@ app.get('/api/notifications/preferences', authRequired, (req, res) => {
   }
 })
 
-app.patch('/api/notifications/preferences', authRequired, (req, res) => {
+app.patch('/api/notifications/preferences', authRequired, async (req, res) => {
+  const { tenantId } = req.user
+  const body = req.body
+
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      const existing = await tursoDb.execute({
+        sql: 'SELECT id FROM user_notifications_preferences WHERE user_id = ?',
+        args: [req.user.id]
+      })
+      if (existing.rows.length === 0) {
+        await tursoDb.execute({
+          sql: 'INSERT INTO user_notifications_preferences (user_id) VALUES (?)',
+          args: [req.user.id]
+        })
+      }
+
+      await tursoDb.execute({
+        sql: `
+          UPDATE user_notifications_preferences SET
+            notify_ticket_assigned = COALESCE(?, notify_ticket_assigned),
+            notify_status_changed = COALESCE(?, notify_status_changed),
+            notify_new_comment = COALESCE(?, notify_new_comment),
+            notify_sla_exceeded = COALESCE(?, notify_sla_exceeded),
+            updated_at = datetime('now', 'localtime')
+          WHERE user_id = ?
+        `,
+        args: [
+          body.notify_ticket_assigned !== undefined ? (body.notify_ticket_assigned ? 1 : 0) : null,
+          body.notify_status_changed !== undefined ? (body.notify_status_changed ? 1 : 0) : null,
+          body.notify_new_comment !== undefined ? (body.notify_new_comment ? 1 : 0) : null,
+          body.notify_sla_exceeded !== undefined ? (body.notify_sla_exceeded ? 1 : 0) : null,
+          req.user.id
+        ]
+      })
+
+      const result = await tursoDb.execute({
+        sql: 'SELECT * FROM user_notifications_preferences WHERE user_id = ?',
+        args: [req.user.id]
+      })
+
+      logAction(req.user.id, req.user.name, 'update', 'notification_prefs', req.user.id, 'Préférences mises à jour (Turso)')
+      return res.json(result.rows[0])
+    } catch (err) {
+      console.error('Erreur Turso PATCH notification prefs:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
   try {
-    const updated = updatePreferences(db, req.user.id, req.body)
+    const updated = updatePreferences(db, req.user.id, body)
     logAction(req.user.id, req.user.name, 'update', 'notification_prefs', req.user.id, 'Préférences mises à jour')
     res.json(updated)
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// ==================== ROUTES : NOTIFICATIONS SYSTÈME (WINDOWS) ====================
+
+app.get('/api/notifications/recent', authRequired, async (req, res) => {
+  const { since } = req.query
+  const { tenantId, id: userId, email: userEmail } = req.user
+
+  if (!since) return res.json({ notifications: [] })
+
+  // --- MODE TURSO ---
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      // On cherche les logs récents qui concernent l'utilisateur
+      const result = await tursoDb.execute({
+        sql: `
+          SELECT l.*, t.title as ticket_title 
+          FROM logs l
+          LEFT JOIN tickets t ON l.entity = 'ticket' AND l.entity_id = t.id
+          WHERE l.created_at > ? 
+            AND l.entity = 'ticket'
+            AND (l.details LIKE ? OR l.user_name != ?)
+          ORDER BY l.created_at DESC
+          LIMIT 5
+        `,
+        args: [since, `%assigné%${userEmail}%`, req.user.name]
+      })
+
+      const notifications = result.rows.map(action => ({
+        id: action.id,
+        title: action.action === 'update' ? 'Mise à jour de ticket' : 'Nouvelle action',
+        message: action.details || `Action sur le ticket #${action.entity_id}`,
+        ticketId: action.entity_id
+      }))
+
+      return res.json({ notifications })
+    } catch (err) {
+      console.error('Erreur Turso GET recent notifs:', err)
+      return res.json({ notifications: [] }) // On renvoie vide pour ne pas crasher le front
+    }
+  }
+
+  // --- MODE SQLITE ---
+  try {
+    const recentActions = db.prepare(`
+      SELECT l.*, t.title as ticket_title 
+      FROM logs l
+      LEFT JOIN tickets t ON l.entity = 'ticket' AND l.entity_id = t.id
+      WHERE l.created_at > ? 
+        AND l.entity = 'ticket'
+        AND (l.details LIKE ? OR l.user_name != ?)
+      ORDER BY l.created_at DESC
+      LIMIT 5
+    `).all(since, `%assigné%${userEmail}%`, req.user.name)
+
+    const notifications = recentActions.map(action => ({
+      id: action.id,
+      title: action.action === 'update' ? 'Mise à jour de ticket' : 'Nouvelle action',
+      message: action.details || `Action sur le ticket #${action.entity_id}`,
+      ticketId: action.entity_id
+    }))
+
+    return res.json({ notifications })
+  } catch (err) {
+    console.error('Erreur SQLite GET recent notifs:', err)
+    return res.json({ notifications: [] })
   }
 })
 

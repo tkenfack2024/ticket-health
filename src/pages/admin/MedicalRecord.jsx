@@ -182,6 +182,30 @@ export default function MedicalRecord() {
                     </div>
                   </div>
                 )}
+
+		{/* ✅ AJOUT : AFFICHAGE DES ORDONNANCES */}
+{r.prescriptions && r.prescriptions.length > 0 && (
+  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
+    <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">Ordonnances</h4>
+    <div className="space-y-2">
+      {r.prescriptions.map(p => (
+        <div key={p.id} className="flex justify-between items-center text-sm bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+          <span className="font-medium text-slate-700 dark:text-slate-300">
+            💊 {p.medication} — {p.dosage}{p.duration ? ` (${p.duration})` : ''}
+          </span>
+          <span className={`text-xs font-bold ${
+            p.status === 'Active' ? 'text-blue-600' :
+            p.status === 'Terminée' ? 'text-green-600' : 'text-slate-500'
+          }`}>
+            {p.status === 'Active' ? '🟢 Active' :
+             p.status === 'Terminée' ? '✅ Terminée' : '⚪ ' + (p.status || 'Inconnu')}
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
               </div>
             </div>
           ))
