@@ -44,9 +44,20 @@ if (process.env.NODE_ENV !== 'production') {
   console.log('💾 Mode développement : SQLite local activé')
 } else {
   console.log('🌍 Mode production : Utilisation exclusive de Turso (SQLite désactivé)')
-  // Fausse base pour éviter le crash au démarrage, car toutes les routes utiliseront Turso
+  
+  // Fausse base de données pour éviter les crashs au démarrage
   db = {
-    prepare: () => ({ all: () => [], get: () => null, run: () => ({ lastInsertRowid: 0, changes: 0 }) }),
+    prepare: (sql) => {
+      return {
+        all: () => [],
+        get: () => {
+          // Si le code cherche un COUNT, on renvoie 0 pour éviter le crash
+          if (sql.includes('COUNT')) return { c: 0 }
+          return null
+        },
+        run: () => ({ lastInsertRowid: 0, changes: 0 })
+      }
+    },
     exec: () => {},
     pragma: () => {},
   }
