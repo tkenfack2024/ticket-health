@@ -187,15 +187,7 @@ export default function Layout() {
                 <NavLink to="/admin" end className={linkClass}>
                   <LayoutDashboard size={18} /> Vue d'ensemble
                 </NavLink>
-                <NavLink to="/admin/risks" className={linkClass}>
-                  <ShieldAlert size={18} /> Risques
-                </NavLink>
-                <NavLink to="/admin/suppliers" className={linkClass}>
-                  <Building2 size={18} /> Fournisseurs
-                </NavLink>
-                <NavLink to="/admin/capacity" className={linkClass}>
-                  <BarChart3 size={18} /> Capacité & Perf
-                </NavLink>
+                {/* ✅ LES 3 LIENS ONT ÉTÉ RETIRÉS ICI */}
               </AccordionMenu>
             )}
           </div>
