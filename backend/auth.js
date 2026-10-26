@@ -217,10 +217,46 @@ export function createAuthRouter(db, logAction) {
   })
 
   // ==================== OTP (laissé tel quel) ====================
-  router.post('/request-otp', async (req, res) => {
-    const { email } = req.body
+    router.post('/request-otp', async (req, res) => {
+    const { email, tenantId } = req.body
     if (!email) return res.status(400).json({ error: 'Email obligatoire' })
 
+    // --- Mode Turso (Multi-tenant) ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const result = await tursoDb.execute({
+          sql: 'SELECT * FROM users WHERE email = ?',
+          args: [email.toLowerCase().trim()]
+        })
+        const user = result.rows[0]
+        
+        if (!user || !user.active) {
+          return res.json({ success: true, message: 'Si le compte existe, un code a été envoyé' })
+        }
+
+        const code = String(Math.floor(100000 + Math.random() * 900000))
+        const expiresMinutes = parseInt(process.env.OTP_EXPIRES_IN_MINUTES || '5')
+        const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString()
+
+        await tursoDb.execute({
+          sql: `UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?`,
+          args: [code, expiresAt, user.id]
+        })
+
+        await sendOTPEmail(user.email, code, user.name)
+        logAction(user.id, user.name, 'otp-request', 'user', user.id, `Code OTP envoyé (${tenantId})`)
+        return res.json({ success: true, message: 'Code envoyé à votre adresse email' })
+      } catch (err) {
+        console.error('Erreur Turso request OTP:', err)
+        return res.status(500).json({ error: 'Impossible d\'envoyer l\'email' })
+      }
+    }
+
+    // --- Mode SQLite ---
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim())
     if (!user || !user.active) {
       return res.json({ success: true, message: 'Si le compte existe, un code a été envoyé' })
@@ -242,10 +278,77 @@ export function createAuthRouter(db, logAction) {
     }
   })
 
-  router.post('/verify-otp', (req, res) => {
-    const { email, code } = req.body
+  // ==================== VÉRIFICATION OTP ====================
+  router.post('/verify-otp', async (req, res) => {
+    const { email, code, tenantId } = req.body
     if (!email || !code) return res.status(400).json({ error: 'Email et code obligatoires' })
 
+    // --- Mode Turso (Multi-tenant) ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const result = await tursoDb.execute({
+          sql: 'SELECT * FROM users WHERE email = ?',
+          args: [email.toLowerCase().trim()]
+        })
+        const user = result.rows[0]
+        if (!user) return res.status(401).json({ error: 'Code invalide ou expiré' })
+
+        if (!user.otp_code || user.otp_code !== code.trim()) {
+          return res.status(401).json({ error: 'Code invalide ou expiré' })
+        }
+        if (new Date(user.otp_expires_at) < new Date()) {
+          return res.status(401).json({ error: 'Code expiré' })
+        }
+
+        await tursoDb.execute({
+          sql: 'UPDATE users SET otp_code = NULL, otp_expires_at = NULL WHERE id = ?',
+          args: [user.id]
+        })
+
+        logAction(user.id, user.name, 'login-otp', 'user', user.id, `Connexion par code OTP (${tenantId})`)
+
+        // Calcul des permissions
+        let permissions = []
+        if (user.role === 'admin') {
+          const permsResult = await tursoDb.execute('SELECT code FROM permissions')
+          permissions = permsResult.rows.map(p => p.code)
+        } else {
+          if (user.custom_role) {
+            const rolePerms = await tursoDb.execute({
+              sql: `SELECT rp.permission_code as code FROM role_permissions rp JOIN roles r ON rp.role_id = r.id WHERE r.name = ?`,
+              args: [user.custom_role]
+            })
+            permissions.push(...rolePerms.rows.map(p => p.code))
+          }
+          const userPerms = await tursoDb.execute({
+            sql: 'SELECT permission_code as code FROM user_permissions WHERE user_id = ?',
+            args: [user.id]
+          })
+          permissions.push(...userPerms.rows.map(p => p.code))
+          permissions = [...new Set(permissions)]
+        }
+
+        const token = jwt.sign(
+          { id: user.id, email: user.email, role: user.role, name: user.name, tenantId },
+          process.env.JWT_SECRET,
+          { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+        )
+
+        return res.json({
+          user: { ...user, permissions, isAdmin: user.role === 'admin', tenantId },
+          token,
+        })
+      } catch (err) {
+        console.error('Erreur Turso verify OTP:', err)
+        return res.status(500).json({ error: 'Erreur de connexion' })
+      }
+    }
+
+    // --- Mode SQLite ---
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim())
     if (!user) return res.status(401).json({ error: 'Code invalide ou expiré' })
 

@@ -59,15 +59,13 @@ export default function Login() {
     }
   }
 
-  const handleRequestOtp = async (e) => {
+    const handleRequestOtp = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     setInfo(null)
     try {
-      // ⚠️ Note : Pour que l'OTP fonctionne avec Turso, il faudrait aussi envoyer le tenantId.
-      // Mais pour l'instant, on garde la fonction telle quelle.
-      await api.requestOtp(email)
+      await api.requestOtp(email, tenantId) // <-- Ajout de tenantId
       setOtpSent(true)
       setInfo('Code envoyé à votre adresse email. Vérifiez votre boîte (et le dossier spam).')
     } catch (err) {
@@ -77,12 +75,12 @@ export default function Login() {
     }
   }
 
-  const handleVerifyOtp = async (e) => {
+    const handleVerifyOtp = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
-      const res = await api.verifyOtp(email, otpCode)
+      const res = await api.verifyOtp(email, otpCode, tenantId) // <-- Ajout de tenantId
       const freshUser = await login(res.user, res.token)
       
       const targetPath = getTargetPath(freshUser, redirectTo)

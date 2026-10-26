@@ -52,13 +52,13 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(data),
   }),
-  requestOtp: (email) => request('/api/auth/request-otp', {
+    requestOtp: (email, tenantId) => request('/api/auth/request-otp', {
     method: 'POST',
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, tenantId }),
   }),
-  verifyOtp: (email, code) => request('/api/auth/verify-otp', {
+  verifyOtp: (email, code, tenantId) => request('/api/auth/verify-otp', {
     method: 'POST',
-    body: JSON.stringify({ email, code }),
+    body: JSON.stringify({ email, code, tenantId }),
   }),
   me: () => request('/api/auth/me'),
 
