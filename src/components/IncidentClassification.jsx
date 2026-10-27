@@ -21,9 +21,16 @@ export default function IncidentClassification({ ticket, onUpdate, isAdmin }) {
       .catch(err => console.error('Erreur critères DORA:', err))
   }, [])
 
+  // On synchronise l'état local avec les données du ticket
   useEffect(() => {
     if (ticket?.dora_criteria) {
-      try { setDoraCriteria(JSON.parse(ticket.dora_criteria)) } catch (e) { setDoraCriteria({}) }
+      try { 
+        setDoraCriteria(JSON.parse(ticket.dora_criteria)) 
+      } catch (e) { 
+        setDoraCriteria({}) 
+      }
+    } else {
+      setDoraCriteria({})
     }
   }, [ticket?.dora_criteria])
 
@@ -40,12 +47,8 @@ export default function IncidentClassification({ ticket, onUpdate, isAdmin }) {
     setLoading(true)
     setError(null)
     try {
-      const checkedCount = Object.values(doraCriteria).filter(v => v === true).length
-      const isMajor = checkedCount >= 2
       await api.updateTicket(ticket.id, {
-        is_dora_major: isMajor,
         dora_criteria: doraCriteria,
-        incident_type: isMajor ? 'major' : ticket.incident_type,
       })
       setShowDoraModal(false)
       if (onUpdate) onUpdate()
@@ -56,7 +59,11 @@ export default function IncidentClassification({ ticket, onUpdate, isAdmin }) {
 
   const currentType = INCIDENT_TYPES[ticket.incident_type] || INCIDENT_TYPES.standard
   const CurrentIcon = currentType.icon
-  const doraCriteriaCount = Object.values(doraCriteria).filter(v => v === true).length
+  
+  // On compte les critères depuis les données du ticket (ou l'état local si en cours d'édition)
+  const savedCriteria = ticket.dora_criteria ? JSON.parse(ticket.dora_criteria) : {}
+  const currentCriteria = showDoraModal ? doraCriteria : savedCriteria
+  const doraCriteriaCount = Object.values(currentCriteria).filter(v => v === true).length
 
   return (
     <div className="p-6 border-b border-slate-200 dark:border-slate-700">
