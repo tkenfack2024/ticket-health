@@ -1,10 +1,11 @@
 // src/pages/admin/MedicalRecord.jsx
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Activity, FileText, Clock, Printer, Download } from 'lucide-react'
+import { ArrowLeft, Activity, FileText, Clock, Printer, Download, Calendar, Award } from 'lucide-react'
 import { api } from '../../api'
 import { generateOrdonnancePDF } from '../../utils/pdfGenerator'
 import { mapConsultationToPdf } from '../../utils/mapConsultation'
+import { generateBonExamen, generateCompteRendu, generateArretTravail, generateCertificat } from '../../utils/medicalDocsGenerator'
 
 export default function MedicalRecord() {
   const { id } = useParams()
@@ -15,6 +16,7 @@ export default function MedicalRecord() {
   const [showConsultModal, setShowConsultModal] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState(null)
   const [selectedRecordForExam, setSelectedRecordForExam] = useState(null)
+  const [docModal, setDocModal] = useState(null) // { type: 'arret' | 'certificat', record }
 
   useEffect(() => { loadData() }, [id])
 
@@ -64,6 +66,26 @@ export default function MedicalRecord() {
     } catch (e) {
       console.error('Erreur génération ordonnance:', e)
       alert("Impossible de générer l'ordonnance : " + e.message)
+    }
+  }
+
+	  const handleGenerateDocument = (type, record) => {
+    if (!patient) return
+    const medecin = {
+      nom: record.doctor_name || 'Médecin',
+      specialite: 'Médecin traitant'
+    }
+    const etablissement = {
+      nom: 'Hôpital Alpha',
+      adresse: 'Yaoundé, Cameroun',
+      telephone: '+237 2 22 00 00 00'
+    }
+
+    if (type === 'bon-examen') {
+      const exam = record.exams && record.exams[0] ? record.exams[0] : { exam_type: 'À définir', notes: '' }
+      generateBonExamen(patient, exam, medecin, etablissement, { print: true })
+    } else if (type === 'compte-rendu') {
+      generateCompteRendu(patient, record, medecin, etablissement, { print: true })
     }
   }
 
@@ -146,6 +168,36 @@ export default function MedicalRecord() {
                   >
                     <Printer size={12} /> Imprimer l'ordonnance
                   </button>
+
+		                  {/* Nouveaux documents */}
+                  <button
+                    onClick={() => handleGenerateDocument('bon-examen', r)}
+                    className="text-xs bg-amber-50 text-amber-700 px-3 py-1.5 rounded hover:bg-amber-600 hover:text-white font-medium transition-colors flex items-center gap-1"
+                  >
+                    <FileText size={12} /> Bon d'examen
+                  </button>
+
+                  <button
+                    onClick={() => handleGenerateDocument('compte-rendu', r)}
+                    className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded hover:bg-indigo-600 hover:text-white font-medium transition-colors flex items-center gap-1"
+                  >
+                    <FileText size={12} /> Compte-rendu
+                  </button>
+
+                  <button
+                    onClick={() => setDocModal({ type: 'arret', record: r })}
+                    className="text-xs bg-rose-50 text-rose-700 px-3 py-1.5 rounded hover:bg-rose-600 hover:text-white font-medium transition-colors flex items-center gap-1"
+                  >
+                    <Calendar size={12} /> Arrêt de travail
+                  </button>
+
+                  <button
+                    onClick={() => setDocModal({ type: 'certificat', record: r })}
+                    className="text-xs bg-purple-50 text-purple-700 px-3 py-1.5 rounded hover:bg-purple-600 hover:text-white font-medium transition-colors flex items-center gap-1"
+                  >
+                    <Award size={12} /> Certificat
+                  </button>
+
 
                   {/* Bouton Télécharger PDF */}
                   <button
@@ -236,9 +288,21 @@ export default function MedicalRecord() {
           onSuccess={() => { setSelectedRecordForExam(null); loadData() }}
         />
       )}
+
+      {docModal && (
+        <DocumentModal
+          type={docModal.type}
+          patient={patient}
+          record={docModal.record}
+          onClose={() => setDocModal(null)}
+        />
+      )}
+
     </div>
   )
 }
+
+	
 
 // ============ MODALE CONSULTATION ============
 function ConsultationModal({ patientId, onClose, onSuccess }) {
@@ -354,6 +418,103 @@ function ExamModal({ recordId, onClose, onSuccess }) {
             <button type="button" onClick={onClose} className="flex-1 border border-slate-300 text-slate-600 py-2 rounded-lg text-sm">Annuler</button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+// ============ MODALE DOCUMENTS (Arrêt de travail / Certificat) ============
+function DocumentModal({ type, patient, record, onClose }) {
+  const [loading, setLoading] = useState(false)
+  const [formData, setFormData] = useState({
+    reason: 'Repos médical',
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    authorized_exits: 'Aucune',
+    content: '',
+    purpose: '',
+  })
+
+  const handleGenerate = (print = true) => {
+    setLoading(true)
+    try {
+      const medecin = {
+        nom: record.doctor_name || 'Médecin',
+        specialite: 'Médecin traitant'
+      }
+      const etablissement = {
+        nom: 'Hôpital Alpha',
+        adresse: 'Yaoundé, Cameroun',
+        telephone: '+237 2 22 00 00 00'
+      }
+
+      if (type === 'arret') {
+        generateArretTravail(patient, formData, medecin, etablissement, { print, download: !print })
+      } else if (type === 'certificat') {
+        generateCertificat(patient, formData, medecin, etablissement, { print, download: !print })
+      }
+      onClose()
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 my-8 border border-slate-200 dark:border-slate-700">
+        <h3 className="font-bold mb-4 text-slate-800 dark:text-slate-100">
+          {type === 'arret' ? 'Arrêt de travail' : 'Certificat médical'}
+        </h3>
+
+        <div className="space-y-4">
+          {type === 'arret' && (
+            <>
+              <div>
+                <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Motif *</label>
+                <input type="text" value={formData.reason} onChange={e => setFormData({...formData, reason: e.target.value})} className="input-dark w-full" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Début *</label>
+                  <input type="date" value={formData.start_date} onChange={e => setFormData({...formData, start_date: e.target.value})} className="input-dark w-full" />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Fin *</label>
+                  <input type="date" value={formData.end_date} onChange={e => setFormData({...formData, end_date: e.target.value})} className="input-dark w-full" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Sorties autorisées</label>
+                <input type="text" value={formData.authorized_exits} onChange={e => setFormData({...formData, authorized_exits: e.target.value})} className="input-dark w-full" />
+              </div>
+            </>
+          )}
+
+          {type === 'certificat' && (
+            <>
+              <div>
+                <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Contenu du certificat *</label>
+                <textarea rows={4} value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="input-dark w-full resize-none" placeholder="Je certifie que l'état de santé de..." />
+              </div>
+              <div>
+                <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Établi pour *</label>
+                <input type="text" value={formData.purpose} onChange={e => setFormData({...formData, purpose: e.target.value})} className="input-dark w-full" placeholder="Ex: Pratique du sport..." />
+              </div>
+            </>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button onClick={() => handleGenerate(true)} disabled={loading} className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center justify-center gap-2">
+              <Printer size={14} /> Imprimer
+            </button>
+            <button onClick={() => handleGenerate(false)} disabled={loading} className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-lg text-sm font-medium hover:bg-slate-200 flex items-center justify-center gap-2">
+              <Download size={14} /> Télécharger
+            </button>
+            <button type="button" onClick={onClose} className="px-4 border border-slate-300 text-slate-600 rounded-lg text-sm hover:bg-slate-50">Annuler</button>
+          </div>
+        </div>
       </div>
     </div>
   )
