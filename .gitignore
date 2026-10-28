@@ -43,3 +43,12 @@ backend/backups/
 backend/tickets.db
 backend/tickets.db.backup-*
 backend/tickets.db.restore-pending
+
+# ===== Nettoyage ===== 
+
+# Fichiers de test Import/Export
+*.enc
+*donnees_patients*.csv
+import-csv-custom.js
+test-generate-import.js
+arborescence.txt

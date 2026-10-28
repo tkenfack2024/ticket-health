@@ -20,6 +20,7 @@ import AdminCapacity from './admin/Capacity'
 
 // ✅ AJOUT DE L'IMPORT DU COMPOSANT BACKUP ICI
 import AdminBackup from './admin/Backup'
+import AdminPatientsImportExport from './admin/PatientsImportExport'
 
 const TABS = [
   { id: 'users', label: 'Utilisateurs', icon: Users },
@@ -38,6 +39,7 @@ const TABS = [
   { id: 'suppliers', label: 'Fournisseurs', icon: Building2 },
   { id: 'capacity', label: 'Capacité & Perf', icon: BarChart3 },
   { id: 'backups', label: 'Backups', icon: Database },
+  { id: 'patients-import-export', label: 'Import/Export Patients', icon: Users },
 ]
 
 export default function Admin() {
@@ -96,6 +98,7 @@ export default function Admin() {
           {activeTab === 'suppliers' && <AdminSuppliers />}
           {activeTab === 'capacity' && <AdminCapacity />}
           {activeTab === 'backups' && <AdminBackup />}
+	  {activeTab === 'patients-import-export' && <AdminPatientsImportExport />}
         </div>
       </div>
     </div>

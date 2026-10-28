@@ -2,6 +2,7 @@
 import cors from 'cors'
 import Database from 'better-sqlite3'
 import bcrypt from 'bcryptjs'
+import multer from 'multer'
 import 'dotenv/config'
 import fs from 'fs'
 import path from 'path'
@@ -33,6 +34,7 @@ import { initRiskTables, createRiskRouter } from './risks.js'
 import { initFacilityTables, createFacilityRouter } from './facility.js'
 import { initResourceTables, createResourceRouter, startResourcesCron } from './resources.js'
 import { initPatientTables, createPatientRouter } from './patients.js'
+import { createPatientsImportExportRouter } from './patients-import-export.js'
 import { initBackupTables, createBackupRouter, startBackupCron } from './backup.js'
 import { evaluateDoraMajor } from './incidents.js'
 
@@ -62,9 +64,11 @@ app.use(cors({
     'http://localhost:5173', 
     'https://healthticket-frontend.onrender.com'
   ],
-  credentials: true
+  credentials: true,
+  exposedHeaders: ['X-Patient-Count']
 }))
 app.use(express.json())
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } })
 
 // ==================== TABLES ====================
 
@@ -332,10 +336,23 @@ if (permsCount === 0) {
     ['logs.view', 'Voir les logs', 'logs', 'Peut consulter le journal d\'activité'],
     ['tickets.all', 'Voir tous les tickets', 'tickets', 'Peut voir tous les tickets'],
     ['medical.read', 'Voir les données patients', 'medical', 'Peut voir les informations médicales'],
+    ['patients.convert', 'Convertir un CSV en fichier sécurisé', 'medical', 'Peut convertir un fichier CSV de patients en fichier chiffré .enc'],
   ]
   const insert = db.prepare('INSERT INTO permissions (code, label, module, description) VALUES (?, ?, ?, ?)')
   for (const p of defaultPerms) insert.run(...p)
   console.log('✅ Permissions par défaut créées')
+}
+
+// ✅ Ajout manuel de la permission patients.convert (si elle n'existe pas déjà)
+const convertPermExists = db.prepare('SELECT code FROM permissions WHERE code = ?').get('patients.convert')
+if (!convertPermExists) {
+  db.prepare(`INSERT INTO permissions (code, label, module, description) VALUES (?, ?, ?, ?)`).run(
+    'patients.convert',
+    'Convertir un CSV en fichier sécurisé',
+    'medical',
+    'Peut convertir un fichier CSV de patients en fichier chiffré .enc'
+  )
+  console.log('✅ Permission patients.convert ajoutée')
 }
 
 // ==================== HELPERS ====================
@@ -384,6 +401,7 @@ if (modulesExist === 0) {
 // ==================== ROUTES : AUTH & ADMIN ====================
 
 app.use('/api/auth', createAuthRouter(db, logAction))
+app.use('/api/admin/patients', upload.single('file'), createPatientsImportExportRouter(db, logAction))
 app.use('/api/admin', createAdminRouter(db, logAction))
 app.use('/api/sla', createSlaRouter(db, logAction))
 app.use('/api/kb', createKnowledgeRouter(db, logAction))
