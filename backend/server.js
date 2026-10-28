@@ -1046,14 +1046,15 @@ app.post('/api/tickets/:id/archive', authRequired, adminOnly, async (req, res) =
     const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
     try {
-      const checkResult = await tursoDb.execute({ sql: 'SELECT id FROM tickets WHERE id = ?', args: [req.params.id] })
-      if (checkResult.rows.length === 0) return res.status(404).json({ error: 'Ticket non trouvé' })
+      const checkResult = await tursoDb.execute({ sql: 'SELECT id, title FROM tickets WHERE id = ?', args: [req.params.id] })
+      const ticket = checkResult.rows[0]
+      if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
       await tursoDb.execute({
         sql: `UPDATE tickets SET archived = 1, archived_at = datetime('now', 'localtime') WHERE id = ?`,
         args: [req.params.id]
       })
-      logAction(req.user.id, req.user.name, 'archive', 'ticket', req.params.id, 'Ticket archivé')
+      logAction(req.user.id, req.user.name, 'archive', 'ticket', req.params.id, `Ticket archivé : ${ticket.title}`)
       return res.json({ success: true })
     } catch (err) {
       console.error('Erreur Turso archive:', err)
@@ -1062,11 +1063,11 @@ app.post('/api/tickets/:id/archive', authRequired, adminOnly, async (req, res) =
   }
 
   // --- MODE SQLITE ---
-  const ticket = db.prepare('SELECT id FROM tickets WHERE id = ?').get(req.params.id)
+  const ticket = db.prepare('SELECT id, title FROM tickets WHERE id = ?').get(req.params.id)
   if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
   db.prepare(`UPDATE tickets SET archived = 1, archived_at = datetime('now', 'localtime') WHERE id = ?`).run(req.params.id)
-  logAction(req.user.id, req.user.name, 'archive', 'ticket', req.params.id, 'Ticket archivé')
+  logAction(req.user.id, req.user.name, 'archive', 'ticket', req.params.id, `Ticket archivé : ${ticket.title}`)
   res.json({ success: true })
 })
 

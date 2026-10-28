@@ -597,42 +597,101 @@ export function createAdminRouter(db, logAction) {
 
   // ==================== ARCHIVE ====================
 
-  router.get('/tickets/archived', (req, res) => {
-    const tickets = db.prepare(`
-      SELECT * FROM tickets
-      WHERE archived = 1
-      ORDER BY archived_at DESC, id DESC
-    `).all()
-    res.json(tickets)
-  })
+  router.get('/tickets/archived', async (req, res) => {
+  const { tenantId } = req.user
 
-  router.post('/tickets/:id/restore', (req, res) => {
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      const result = await tursoDb.execute(`
+        SELECT * FROM tickets
+        WHERE archived = 1
+        ORDER BY archived_at DESC, id DESC
+      `)
+      return res.json(result.rows)
+    } catch (err) {
+      console.error('Erreur Turso GET archived:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  // MODE SQLITE
+  const tickets = db.prepare(`
+    SELECT * FROM tickets
+    WHERE archived = 1
+    ORDER BY archived_at DESC, id DESC
+  `).all()
+  res.json(tickets)
+})
+
+  router.post('/tickets/:id/restore', async (req, res) => {
+  const targetId = parseInt(req.params.id)
+  const { tenantId } = req.user
+
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      const check = await tursoDb.execute({ sql: 'SELECT id, title FROM tickets WHERE id = ?', args: [targetId] })
+      const ticket = check.rows[0]
+      if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
+
+      await tursoDb.execute({
+        sql: `UPDATE tickets SET archived = 0, archived_at = NULL WHERE id = ?`,
+        args: [targetId]
+      })
+
+      logAction(req.user.id, req.user.name, 'restore', 'ticket', targetId, `Ticket restauré : ${ticket.title}`)
+      return res.json({ success: true })
+    } catch (err) {
+      console.error('Erreur Turso restore:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  // MODE SQLITE
+  const ticket = db.prepare('SELECT id, title FROM tickets WHERE id = ?').get(targetId)
+  if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
+
+  db.prepare(`UPDATE tickets SET archived = 0, archived_at = NULL WHERE id = ?`).run(targetId)
+  logAction(req.user.id, req.user.name, 'restore', 'ticket', targetId, `Ticket restauré : ${ticket.title}`)
+  res.json({ success: true })
+})
+
+    router.delete('/tickets/:id', async (req, res) => {
     const targetId = parseInt(req.params.id)
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const check = await tursoDb.execute({ sql: 'SELECT id, title FROM tickets WHERE id = ?', args: [targetId] })
+        const ticket = check.rows[0]
+        if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
+
+        await tursoDb.execute({ sql: 'DELETE FROM tickets WHERE id = ?', args: [targetId] })
+        logAction(req.user.id, req.user.name, 'delete', 'ticket', targetId, `Ticket SUPPRIMÉ définitivement : ${ticket.title}`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso DELETE ticket:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // MODE SQLITE
     const ticket = db.prepare('SELECT id, title FROM tickets WHERE id = ?').get(targetId)
-
-    if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
-
-    db.prepare(`
-      UPDATE tickets SET archived = 0, archived_at = NULL WHERE id = ?
-    `).run(targetId)
-
-    logAction(req.user.id, req.user.name, 'restore', 'ticket', targetId,
-      `Ticket restauré : ${ticket.title}`)
-
-    res.json({ success: true })
-  })
-
-  router.delete('/tickets/:id', (req, res) => {
-    const targetId = parseInt(req.params.id)
-    const ticket = db.prepare('SELECT id, title FROM tickets WHERE id = ?').get(targetId)
-
     if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
     db.prepare('DELETE FROM tickets WHERE id = ?').run(targetId)
-
-    logAction(req.user.id, req.user.name, 'delete', 'ticket', targetId,
-      `Ticket SUPPRIMÉ définitivement : ${ticket.title}`)
-
+    logAction(req.user.id, req.user.name, 'delete', 'ticket', targetId, `Ticket SUPPRIMÉ définitivement : ${ticket.title}`)
     res.json({ success: true })
   })
 
