@@ -965,7 +965,20 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
   const previousStatus = ticket.status
   const previousAssignee = ticket.assignee
 
-    // 🛡️ COHÉRENCE : Si c'est un DORA majeur, on force le type d'incident
+      
+
+    // 🛡️ SÉCURITÉ : Recalculer is_dora_major côté serveur (SQLite)
+  let finalIsDoraMajorSqlite = undefined
+  if (dora_criteria !== undefined) {
+    try {
+      const parsedCriteria = typeof dora_criteria === 'string' ? JSON.parse(dora_criteria) : dora_criteria
+      finalIsDoraMajorSqlite = evaluateDoraMajor(parsedCriteria)
+    } catch (e) {
+      finalIsDoraMajorSqlite = false
+    }
+  }
+
+  // 🛡️ COHÉRENCE : Si c'est un DORA majeur, on force le type d'incident
   let finalIncidentTypeSqlite = incident_type
   if (finalIsDoraMajorSqlite === true) {
     finalIncidentTypeSqlite = 'major'
@@ -993,23 +1006,10 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
     targetId
   )
 
-  if (status && status !== previousStatus) {
+    if (status && status !== previousStatus) {
     if (status === PAUSE_STATUS) pauseSla(db, targetId)
     else if (previousStatus === PAUSE_STATUS) resumeSla(db, targetId)
     if (status === 'Résolu') {
-
-
-	// 🛡️ SÉCURITÉ : Recalculer is_dora_major côté serveur (SQLite)
-  let finalIsDoraMajorSqlite = undefined
-  if (dora_criteria !== undefined) {
-    try {
-      const parsedCriteria = typeof dora_criteria === 'string' ? JSON.parse(dora_criteria) : dora_criteria
-      finalIsDoraMajorSqlite = evaluateDoraMajor(parsedCriteria)
-    } catch (e) {
-      finalIsDoraMajorSqlite = false
-    }
-  }
-
       db.prepare('UPDATE tickets SET resolved_at = datetime(\'now\', \'localtime\') WHERE id = ?').run(targetId)
     }
   }
