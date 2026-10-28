@@ -35,6 +35,7 @@ import { initFacilityTables, createFacilityRouter } from './facility.js'
 import { initResourceTables, createResourceRouter, startResourcesCron } from './resources.js'
 import { initPatientTables, createPatientRouter } from './patients.js'
 import { createPatientsImportExportRouter } from './patients-import-export.js'
+import { initStockTables, createStockRouter } from './stock.js'
 import { initBackupTables, createBackupRouter, startBackupCron } from './backup.js'
 import { evaluateDoraMajor } from './incidents.js'
 
@@ -321,6 +322,7 @@ initRiskTables(db)
 initFacilityTables(db)
 initResourceTables(db)
 initPatientTables(db)
+initStockTables(db)
 initBackupTables(db)
 
 // ==================== SEED : Permissions ====================
@@ -417,6 +419,7 @@ app.use('/api/risks', createRiskRouter(db, logAction))
 app.use('/api/facility', createFacilityRouter(db, logAction))
 app.use('/api/resources', createResourceRouter(db, logAction))
 app.use('/api/patients', createPatientRouter(db, logAction))
+app.use('/api/stock', createStockRouter(db, logAction))
 app.use('/api/admin/backups', createBackupRouter(db, logAction))
 
 initCatalogTables(db)

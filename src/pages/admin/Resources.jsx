@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Bed, Armchair, Plus, Search, Edit2, Trash2, X, Loader2, MapPin, Building } from 'lucide-react'
+import { Bed, Armchair, Plus, Search, Edit2, Trash2, X, Loader2, MapPin, Building, Package } from 'lucide-react'
 import { api } from '../../api'
 // ✅ IMPORT DU COMPOSANT FACILITY
 import AdminFacility from './Facility'
+import AdminStock from './Stock'
 
 // ==========================================
 // COMPOSANT PRINCIPAL (AVEC LES ONGLETS)
@@ -41,6 +42,19 @@ export default function AdminRessources() {
             >
               <Bed size={16} /> Lits & Tables
             </button>
+
+		            <button
+              onClick={() => setActiveTab('stock')}
+              className={`flex items-center gap-2 px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'stock'
+                  ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              <Package size={16} /> Stock Médical
+            </button>
+
+
           </div>
         </div>
       </div>
@@ -49,6 +63,7 @@ export default function AdminRessources() {
         <div className="pt-6">
           {activeTab === 'facility' && <AdminFacility />}
           {activeTab === 'lits' && <LitsTab />}
+	  {activeTab === 'stock' && <AdminStock />}
         </div>
       </div>
     </div>
