@@ -38,6 +38,7 @@ import { createPatientsImportExportRouter } from './patients-import-export.js'
 import { initStockTables, createStockRouter } from './stock.js'
 import { initBackupTables, createBackupRouter, startBackupCron } from './backup.js'
 import { evaluateDoraMajor } from './incidents.js'
+import { initNotificationsTables, createNotification } from './notifications-db.js'
 
 // ✅ IMPORTS UNIQUES POUR TURSO
 import { createClient } from '@libsql/client'
@@ -540,6 +541,99 @@ app.patch('/api/notifications/preferences', authRequired, async (req, res) => {
 
 // ==================== ROUTES : NOTIFICATIONS SYSTÈME (WINDOWS) ====================
 
+// ---- GET /api/notifications/list ----
+app.get('/api/notifications/list', authRequired, async (req, res) => {
+  const { since } = req.query
+  const { tenantId, id: userId } = req.user
+
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      let sql = 'SELECT * FROM notifications WHERE user_id = ? AND read = 0'
+      const args = [userId]
+      
+      if (since) {
+        sql += ' AND created_at > ?'
+        args.push(since)
+      }
+      
+      sql += ' ORDER BY created_at DESC LIMIT 20'
+
+      const result = await tursoDb.execute({ sql, args })
+      return res.json({ notifications: result.rows })
+    } catch (err) {
+      console.error('Erreur Turso GET notifications list:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  let sql = 'SELECT * FROM notifications WHERE user_id = ? AND read = 0'
+  const params = [userId]
+  
+  if (since) {
+    sql += ' AND created_at > ?'
+    params.push(since)
+  }
+  
+  sql += ' ORDER BY created_at DESC LIMIT 20'
+  const notifs = db.prepare(sql).all(...params)
+  res.json({ notifications: notifs })
+})
+
+// ---- PATCH /api/notifications/:id/read ----
+app.patch('/api/notifications/:id/read', authRequired, async (req, res) => {
+  const { tenantId, id: userId } = req.user
+  const notifId = parseInt(req.params.id)
+
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      await tursoDb.execute({
+        sql: 'UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?',
+        args: [notifId, userId]
+      })
+      return res.json({ success: true })
+    } catch (err) {
+      console.error('Erreur Turso PATCH notif read:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  db.prepare('UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?').run(notifId, userId)
+  res.json({ success: true })
+})
+
+// ---- PATCH /api/notifications/read-all ----
+app.patch('/api/notifications/read-all', authRequired, async (req, res) => {
+  const { tenantId, id: userId } = req.user
+
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      await tursoDb.execute({
+        sql: 'UPDATE notifications SET read = 1 WHERE user_id = ?',
+        args: [userId]
+      })
+      return res.json({ success: true })
+    } catch (err) {
+      console.error('Erreur Turso PATCH read-all:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').run(userId)
+  res.json({ success: true })
+})
+
 app.get('/api/notifications/recent', authRequired, async (req, res) => {
   const { since } = req.query
   const { tenantId, id: userId, email: userEmail } = req.user
@@ -581,6 +675,103 @@ app.get('/api/notifications/recent', authRequired, async (req, res) => {
       return res.json({ notifications: [] }) // On renvoie vide pour ne pas crasher le front
     }
   }
+
+// ---- GET /api/notifications/list ----
+// Récupère les notifications non lues de l'utilisateur
+app.get('/api/notifications/list', authRequired, async (req, res) => {
+  const { since } = req.query
+  const { tenantId, id: userId } = req.user
+
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      let sql = 'SELECT * FROM notifications WHERE user_id = ? AND read = 0'
+      const args = [userId]
+      
+      if (since) {
+        sql += ' AND created_at > ?'
+        args.push(since)
+      }
+      
+      sql += ' ORDER BY created_at DESC LIMIT 20'
+
+      const result = await tursoDb.execute({ sql, args })
+      return res.json({ notifications: result.rows })
+    } catch (err) {
+      console.error('Erreur Turso GET notifications list:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  // MODE SQLITE
+  let sql = 'SELECT * FROM notifications WHERE user_id = ? AND read = 0'
+  const params = [userId]
+  
+  if (since) {
+    sql += ' AND created_at > ?'
+    params.push(since)
+  }
+  
+  sql += ' ORDER BY created_at DESC LIMIT 20'
+  const notifs = db.prepare(sql).all(...params)
+  res.json({ notifications: notifs })
+})
+
+// ---- PATCH /api/notifications/:id/read ----
+// Marque une notification comme lue
+app.patch('/api/notifications/:id/read', authRequired, async (req, res) => {
+  const { tenantId, id: userId } = req.user
+  const notifId = parseInt(req.params.id)
+
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      await tursoDb.execute({
+        sql: 'UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?',
+        args: [notifId, userId]
+      })
+      return res.json({ success: true })
+    } catch (err) {
+      console.error('Erreur Turso PATCH notif read:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  db.prepare('UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?').run(notifId, userId)
+  res.json({ success: true })
+})
+
+// ---- PATCH /api/notifications/read-all ----
+// Marque toutes les notifications comme lues
+app.patch('/api/notifications/read-all', authRequired, async (req, res) => {
+  const { tenantId, id: userId } = req.user
+
+  if (tenantId) {
+    const tenant = TENANTS[tenantId]
+    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+    try {
+      await tursoDb.execute({
+        sql: 'UPDATE notifications SET read = 1 WHERE user_id = ?',
+        args: [userId]
+      })
+      return res.json({ success: true })
+    } catch (err) {
+      console.error('Erreur Turso PATCH read-all:', err)
+      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+    }
+  }
+
+  db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').run(userId)
+  res.json({ success: true })
+})
 
   // --- MODE SQLITE ---
   try {

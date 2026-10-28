@@ -124,21 +124,21 @@ export default function Layout() {
 
           <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-1">
             
-                       {/* Menu Gestion DPI (Lien direct) */}
+            {/* Menu Gestion DPI (Lien direct) */}
             {(isAdmin || hasPermission('patient.read') || hasPermission('medical.read')) && (
               <NavLink to="/admin/patients" className={linkClass}>
                 <Users size={18} /> Gestion DPI
               </NavLink>
             )}
 
-                        {/* Menu Gestion des Ressources (Lien direct) */}
+            {/* Menu Gestion des Ressources (Lien direct) */}
             {(isAdmin || hasPermission('facility.manage') || hasPermission('resource.manage')) && (
               <NavLink to="/admin/ressources" className={linkClass}>
                 <Building size={18} /> Gestion des Ressources
               </NavLink>
             )}
 
-                        {/* Menu Administration (Lien direct) */}
+            {/* Menu Administration (Lien direct) */}
             {isAdmin && (
               <NavLink to="/admin" end className={linkClass}>
                 <Shield size={18} /> Administration
@@ -174,6 +174,7 @@ export default function Layout() {
                 <Bell size={18} /> Notifications
               </NavLink>
               <ThemeToggle />
+
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-3 px-4 py-2.5 text-slate-600 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 rounded-lg w-full transition-colors text-sm mt-1"

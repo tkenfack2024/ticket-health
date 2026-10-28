@@ -2,54 +2,48 @@ import { useEffect, useRef } from 'react'
 import { api } from '../api'
 
 export function useSystemNotifications(user) {
-  // On stocke la date de la dernière vérification
   const lastCheckRef = useRef(new Date().toISOString())
 
   useEffect(() => {
-    // 1. Demander la permission au navigateur (une seule fois)
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
+    if (!user) return
+    if (!('Notification' in window)) return
 
-    // 2. Fonction qui vérifie les notifications
     const checkNotifications = async () => {
-      // Si pas d'utilisateur connecté ou permission refusée, on ne fait rien
-      if (!user || Notification.permission !== 'granted') return
+      // ✅ NOUVEAU : On vérifie si l'utilisateur a activé le système
+      const isEnabled = localStorage.getItem('ht_notifications_enabled') === 'true'
+      if (!isEnabled || Notification.permission !== 'granted') return
 
       try {
-        const res = await api.get(`/api/notifications/recent?since=${lastCheckRef.current}`)
+        const res = await api.get(`/api/notifications/list?since=${lastCheckRef.current}`)
         
         if (res && res.notifications && res.notifications.length > 0) {
           res.notifications.forEach(notif => {
-            // Création de la notification Windows
             const nativeNotif = new Notification(notif.title, {
               body: notif.message,
-              icon: '/favicon.svg', // Assurez-vous que le fichier existe dans public/
-              tag: `notif-${notif.id}`, // Évite les doublons
+              icon: '/favicon.svg',
+              tag: `notif-${notif.id}`,
             })
 
-            // Optionnel : Cliquer sur la notification ouvre le ticket
-            nativeNotif.onclick = () => {
+            nativeNotif.onclick = async () => {
               window.focus()
-              if (notif.ticketId) {
-                window.location.href = `/tickets/${notif.ticketId}`
-              }
+              try { await api.patch(`/api/notifications/${notif.id}/read`, {}) } catch (e) {}
+              if (notif.link) window.location.href = notif.link
+              nativeNotif.close()
             }
           })
+
+          try { await api.patch('/api/notifications/read-all', {}) } catch (e) {}
         }
         
-        // Mettre à jour la date pour la prochaine vérification
         lastCheckRef.current = new Date().toISOString()
       } catch (err) {
         console.error('Erreur check notifs:', err)
       }
     }
 
-    // Lancer la vérification immédiatement, puis toutes les 30 secondes
     checkNotifications()
     const interval = setInterval(checkNotifications, 30000)
 
-    // Nettoyage quand on quitte la page
     return () => clearInterval(interval)
   }, [user])
 }
