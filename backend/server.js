@@ -341,10 +341,18 @@ if (permsCount === 0) {
 // ==================== HELPERS ====================
 
 function logAction(userId, userName, action, entity, entityId, details) {
-  db.prepare(`
-    INSERT INTO logs (user_id, user_name, action, entity, entity_id, details)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(userId || null, userName || 'Système', action, entity, entityId || null, details || null)
+  try {
+    db.prepare(`
+      INSERT INTO logs (user_id, user_name, action, entity, entity_id, details)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(userId || null, userName || 'Système', action, entity, entityId || null, details || null)
+  } catch (err) {
+    // On ignore silencieusement l'erreur si l'utilisateur n'existe pas dans la base locale
+    // (Cas fréquent quand on est en mode multi-tenant avec Turso)
+    if (!err.message.includes('FOREIGN KEY')) {
+      console.error('Erreur logAction:', err)
+    }
+  }
 }
 
 // ==================== SEED : Admin & Modules ====================

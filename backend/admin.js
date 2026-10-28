@@ -209,24 +209,49 @@ export function createAdminRouter(db, logAction) {
     res.json(updated)
   })
 
-  // ---- POST /api/admin/users/:id/reset-password ----
+   // ---- POST /api/admin/users/:id/reset-password ----
   // Réinitialiser le mot de passe d'un utilisateur
-  router.post('/users/:id/reset-password', (req, res) => {
+  router.post('/users/:id/reset-password', async (req, res) => {
     const { newPassword } = req.body
     const targetId = parseInt(req.params.id)
+    const { tenantId } = req.user
 
     if (!newPassword || newPassword.length < 6) {
       return res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 6 caractères' })
     }
 
+    const hash = bcrypt.hashSync(newPassword, 10)
+
+    // --- MODE TURSO (Multi-tenant) ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const check = await tursoDb.execute({ sql: 'SELECT id, email FROM users WHERE id = ?', args: [targetId] })
+        const target = check.rows[0]
+        if (!target) return res.status(404).json({ error: 'Utilisateur non trouvé' })
+
+        await tursoDb.execute({
+          sql: 'UPDATE users SET password_hash = ? WHERE id = ?',
+          args: [hash, targetId]
+        })
+
+        logAction(req.user.id, req.user.name, 'reset-password', 'user', targetId, `Mot de passe réinitialisé : ${target.email} [Turso]`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso reset password:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
     const target = db.prepare('SELECT id, email FROM users WHERE id = ?').get(targetId)
     if (!target) return res.status(404).json({ error: 'Utilisateur non trouvé' })
 
-    const hash = bcrypt.hashSync(newPassword, 10)
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, targetId)
-
     logAction(req.user.id, req.user.name, 'reset-password', 'user', targetId, `Mot de passe réinitialisé : ${target.email}`)
-
     res.json({ success: true })
   })
 

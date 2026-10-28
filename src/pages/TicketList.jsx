@@ -11,6 +11,7 @@ export default function TicketList() {
   const [tickets, setTickets] = useState([])
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('Tous')
+  const [filterSource, setFilterSource] = useState('Tous') // 🆕 Filtre Catalogue / Manuel
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -37,9 +38,19 @@ export default function TicketList() {
   }, [location.key])  // ✅ Se recharge à chaque navigation vers cette page
 
   const filtered = tickets.filter(t => {
+    // 1. Filtre par recherche
     const matchSearch = t.title.toLowerCase().includes(search.toLowerCase())
+    
+    // 2. Filtre par statut
     const matchStatus = filterStatus === 'Tous' || t.status === filterStatus
-    return matchSearch && matchStatus
+    
+    // 3. Filtre par source (Catalogue vs Manuel)
+    const matchSource = 
+      filterSource === 'Tous' || 
+      (filterSource === 'Catalogue' && t.title.startsWith('[Demande]')) ||
+      (filterSource === 'Manuel' && !t.title.startsWith('[Demande]'))
+
+    return matchSearch && matchStatus && matchSource
   })
 
   if (loading) {
@@ -79,7 +90,10 @@ export default function TicketList() {
         </Link>
       </div>
 
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 mb-6 flex flex-wrap gap-4">
+      {/* Barre de filtres */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 mb-6 flex flex-wrap gap-4 items-center">
+        
+        {/* Recherche */}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
           <input
@@ -90,19 +104,33 @@ export default function TicketList() {
             className="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+
+        {/* Filtre Statut */}
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
           className="px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option>Tous</option>
-          <option>Ouvert</option>
-          <option>En cours</option>
-          <option>En attente client</option>
-          <option>Résolu</option>
+          <option value="Tous">Tous les statuts</option>
+          <option value="Ouvert">Ouvert</option>
+          <option value="En cours">En cours</option>
+          <option value="En attente client">En attente client</option>
+          <option value="Résolu">Résolu</option>
+        </select>
+
+        {/* 🆕 Filtre Source */}
+        <select
+          value={filterSource}
+          onChange={(e) => setFilterSource(e.target.value)}
+          className="px-4 py-2 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="Tous">Toutes les sources</option>
+          <option value="Catalogue">Catalogue (Demandes)</option>
+          <option value="Manuel">Créés manuellement</option>
         </select>
       </div>
 
+      {/* Tableau des tickets */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
         <table className="w-full">
           <thead className="bg-slate-50 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600">
@@ -134,6 +162,12 @@ export default function TicketList() {
                     <Link to={`/tickets/${ticket.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
                       {ticket.title}
                     </Link>
+                    {/* Petit badge visuel pour la source */}
+                    {ticket.title.startsWith('[Demande]') && (
+                      <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                        Catalogue
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">{ticket.category}</td>
                   <td className="px-6 py-4">
