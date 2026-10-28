@@ -621,8 +621,10 @@ app.get('/api/security/encryption-status', authRequired, (req, res) => {
 
 // ---- GET /api/tickets ----
 app.get('/api/tickets', authRequired, async (req, res) => {
-  const { archived, assigned_to } = req.query
+  const { archived, assigned_to, limit = 20, offset = 0 } = req.query
   const { tenantId } = req.user
+  const limitNum = parseInt(limit)
+  const offsetNum = parseInt(offset)
 
   if (tenantId) {
     const tenant = TENANTS[tenantId]
@@ -630,41 +632,56 @@ app.get('/api/tickets', authRequired, async (req, res) => {
     const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
     try {
-      let query = `
-        SELECT t.*, u.name as assigned_to_name, u.email as assigned_to_email
-        FROM tickets t
-        LEFT JOIN users u ON t.assignee = u.email
-        WHERE 1=1
-      `
+      let whereClause = 'WHERE 1=1'
       const args = []
-      query += archived === 'true' ? ' AND t.archived = 1' : ' AND t.archived = 0'
+      
+      if (archived === 'true') {
+        whereClause += ' AND t.archived = 1'
+      } else {
+        whereClause += ' AND t.archived = 0'
+      }
 
+      // Filtrage selon le rôle
       if (req.user.role === 'admin') {
-        // Admin : voit tout
+        // Admin voit tout
       } else if (req.user.role === 'technicien') {
-        query += ` AND (t.assignee = ? OR t.created_by = ?)`
+        whereClause += ` AND (t.assignee = ? OR t.created_by = ?)`
         args.push(req.user.email, req.user.id)
       } else {
-        query += ` AND (t.created_by = ? OR t.assignee = ?)`
+        whereClause += ` AND (t.created_by = ? OR t.assignee = ?)`
         args.push(req.user.id, req.user.email)
       }
 
       if (assigned_to) {
-        query += ' AND t.assignee = ?'
+        whereClause += ' AND t.assignee = ?'
         args.push(assigned_to)
       }
 
-      query += ' ORDER BY t.id DESC'
+      // 1. Compter le total
+      const countResult = await tursoDb.execute({
+        sql: `SELECT COUNT(*) as c FROM tickets t ${whereClause}`,
+        args
+      })
+      const total = countResult.rows[0].c
 
-      const result = await tursoDb.execute({ sql: query, args })
+      // 2. Récupérer la page
+      const result = await tursoDb.execute({
+        sql: `
+          SELECT t.*, u.name as assigned_to_name, u.email as assigned_to_email
+          FROM tickets t
+          LEFT JOIN users u ON t.assignee = u.email
+          ${whereClause}
+          ORDER BY t.id DESC LIMIT ? OFFSET ?
+        `,
+        args: [...args, limitNum, offsetNum]
+      })
+      
       const tickets = result.rows
-
       for (const t of tickets) {
         t.sla_status = computeSlaStatus(t)
         t.description = decrypt(t.description)
       }
-
-      return res.json(tickets)
+      return res.json({ data: tickets, total })
     } catch (err) {
       console.error('Erreur Turso GET tickets:', err)
       return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
@@ -672,40 +689,47 @@ app.get('/api/tickets', authRequired, async (req, res) => {
   }
 
   // --- MODE SQLITE ---
-  let query = `
-    SELECT t.*, u.name as assigned_to_name, u.email as assigned_to_email
-    FROM tickets t
-    LEFT JOIN users u ON t.assignee = u.email
-    WHERE 1=1
-  `
+  let whereClause = 'WHERE 1=1'
   const params = []
-  query += archived === 'true' ? ' AND t.archived = 1' : ' AND t.archived = 0'
+  
+  if (archived === 'true') {
+    whereClause += ' AND t.archived = 1'
+  } else {
+    whereClause += ' AND t.archived = 0'
+  }
 
   if (req.user.role === 'admin') {
-    // Admin : voit tout
+    // Admin voit tout
   } else if (req.user.role === 'technicien') {
-    query += ` AND (t.assignee = ? OR t.created_by = ?)`
+    whereClause += ` AND (t.assignee = ? OR t.created_by = ?)`
     params.push(req.user.email, req.user.id)
   } else {
-    query += ` AND (t.created_by = ? OR t.assignee = ?)`
+    whereClause += ` AND (t.created_by = ? OR t.assignee = ?)`
     params.push(req.user.id, req.user.email)
   }
 
   if (assigned_to) {
-    query += ' AND t.assignee = ?'
+    whereClause += ' AND t.assignee = ?'
     params.push(assigned_to)
   }
 
-  query += ' ORDER BY t.id DESC'
+  const total = db.prepare(`SELECT COUNT(*) as c FROM tickets t ${whereClause}`).get(...params).c
 
-  const tickets = db.prepare(query).all(...params)
+  const tickets = db.prepare(`
+    SELECT t.*, u.name as assigned_to_name, u.email as assigned_to_email
+    FROM tickets t
+    LEFT JOIN users u ON t.assignee = u.email
+    ${whereClause}
+    ORDER BY t.id DESC LIMIT ? OFFSET ?
+  `).all(...params, limitNum, offsetNum)
+
   for (const t of tickets) {
     t.sla_status = computeSlaStatus(t)
     t.description = decrypt(t.description)
   }
-  res.json(tickets)
+  res.json({ data: tickets, total })
 })
-
+  
 // ---- GET /api/tickets/:id ----
 app.get('/api/tickets/:id', authRequired, async (req, res) => {
   const { tenantId } = req.user

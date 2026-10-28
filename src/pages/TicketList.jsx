@@ -1,6 +1,7 @@
+// src/pages/TicketList.jsx
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Search, Plus } from 'lucide-react'
+import { Search, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
 import SlaBadge from '../components/SlaBadge'
 import { api } from '../api'
 import { useAuth } from '../context/AuthContext'
@@ -9,51 +10,53 @@ export default function TicketList() {
   const { user } = useAuth()
   const location = useLocation()
   const [tickets, setTickets] = useState([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('Tous')
-  const [filterSource, setFilterSource] = useState('Tous') // 🆕 Filtre Catalogue / Manuel
+  const [filterSource, setFilterSource] = useState('Tous')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  const PAGE_SIZE = 15
+
+  const load = async () => {
+    try {
+      setLoading(true)
+      const res = await api.get(`/api/tickets?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`)
+      setTickets(res.data || [])
+      setTotal(res.total || 0)
+      setError(null)
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
+    load()
+  }, [page, location.key])
 
-    api.getTickets()
-      .then(data => {
-        if (!cancelled) {
-          setTickets(data)
-          setLoading(false)
-        }
-      })
-      .catch(err => {
-        if (!cancelled) {
-          console.error(err)
-          setError(err.message)
-          setLoading(false)
-        }
-      })
+  useEffect(() => {
+    setPage(0)
+  }, [search, filterStatus, filterSource])
 
-    return () => { cancelled = true }
-  }, [location.key])  // ✅ Se recharge à chaque navigation vers cette page
-
-  const filtered = tickets.filter(t => {
-    // 1. Filtre par recherche
+  // Filtrage local (sur la page courante)
+  const filtered = (tickets || []).filter(t => {
     const matchSearch = t.title.toLowerCase().includes(search.toLowerCase())
-    
-    // 2. Filtre par statut
     const matchStatus = filterStatus === 'Tous' || t.status === filterStatus
-    
-    // 3. Filtre par source (Catalogue vs Manuel)
     const matchSource = 
       filterSource === 'Tous' || 
       (filterSource === 'Catalogue' && t.title.startsWith('[Demande]')) ||
       (filterSource === 'Manuel' && !t.title.startsWith('[Demande]'))
-
     return matchSearch && matchStatus && matchSource
   })
 
-  if (loading) {
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+
+  if (loading && tickets.length === 0) {
     return <div className="p-8 text-slate-500 dark:text-slate-400">Chargement des tickets...</div>
   }
 
@@ -62,9 +65,6 @@ export default function TicketList() {
       <div className="p-8">
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-4 py-3 rounded-lg">
           <strong>Erreur :</strong> {error}
-          <p className="text-sm mt-1">
-            Vérifie que le backend tourne bien sur <code className="bg-red-100 dark:bg-red-900/40 px-1 rounded">http://localhost:3001</code>
-          </p>
         </div>
       </div>
     )
@@ -79,7 +79,7 @@ export default function TicketList() {
              user?.role === 'technicien' ? 'Tickets assignés' :
              'Mes tickets'}
           </h1>
-          <p className="text-slate-500 dark:text-slate-400">{filtered.length} ticket(s) trouvé(s)</p>
+          <p className="text-slate-500 dark:text-slate-400">{total} ticket(s) au total</p>
         </div>
         <Link
           to="/tickets/new"
@@ -90,10 +90,8 @@ export default function TicketList() {
         </Link>
       </div>
 
-      {/* Barre de filtres */}
+      {/* Filtres */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 mb-6 flex flex-wrap gap-4 items-center">
-        
-        {/* Recherche */}
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
           <input
@@ -105,7 +103,6 @@ export default function TicketList() {
           />
         </div>
 
-        {/* Filtre Statut */}
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
@@ -118,7 +115,6 @@ export default function TicketList() {
           <option value="Résolu">Résolu</option>
         </select>
 
-        {/* 🆕 Filtre Source */}
         <select
           value={filterSource}
           onChange={(e) => setFilterSource(e.target.value)}
@@ -131,7 +127,7 @@ export default function TicketList() {
       </div>
 
       {/* Tableau des tickets */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-6">
         <table className="w-full">
           <thead className="bg-slate-50 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600">
             <tr>
@@ -148,11 +144,7 @@ export default function TicketList() {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan="7" className="px-6 py-8 text-center text-slate-500 dark:text-slate-400">
-                  {user?.role === 'admin'
-                    ? 'Aucun ticket trouvé. Créez-en un !'
-                    : user?.role === 'technicien'
-                    ? 'Aucun ticket ne vous est assigné pour le moment.'
-                    : "Vous n'avez créé aucun ticket pour le moment."}
+                  Aucun ticket trouvé sur cette page.
                 </td>
               </tr>
             ) : (
@@ -162,7 +154,6 @@ export default function TicketList() {
                     <Link to={`/tickets/${ticket.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
                       {ticket.title}
                     </Link>
-                    {/* Petit badge visuel pour la source */}
                     {ticket.title.startsWith('[Demande]') && (
                       <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
                         Catalogue
@@ -201,6 +192,31 @@ export default function TicketList() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Page {page + 1} sur {totalPages}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="flex items-center gap-1 px-4 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              <ChevronLeft size={16} /> Précédent
+            </button>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="flex items-center gap-1 px-4 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 transition-colors"
+            >
+              Suivant <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

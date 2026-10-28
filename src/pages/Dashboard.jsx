@@ -11,10 +11,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     api.getTickets()
-      .then(data => {
-        setTickets(data)
-        setLoading(false)
-      })
+  .then(res => {
+    setTickets(res.data || [])
+    setLoading(false)
+  })
       .catch(err => {
         console.error(err)
         setError(err.message)

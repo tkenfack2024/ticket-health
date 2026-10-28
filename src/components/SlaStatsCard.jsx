@@ -20,13 +20,14 @@ export default function SlaStatsCard() {
 
   useEffect(() => {
     Promise.all([
-      api.get('/api/sla/stats'),
-      api.getTickets(),
-    ])
-      .then(([statsData, tickets]) => {
-        setStats(statsData)
-        const critical = tickets
-          .filter(t => t.sla_status === 'dépassé' || t.sla_status === 'menacé')
+  api.get('/api/sla/stats'),
+  api.getTickets(),
+])
+  .then(([statsData, ticketsRes]) => {
+    setStats(statsData)
+    const tickets = ticketsRes.data || []
+    const critical = tickets
+      .filter(t => t.sla_status === 'dépassé' || t.sla_status === 'menacé')
           .sort((a, b) => {
             const order = { 'dépassé': 0, 'menacé': 1 }
             return (order[a.sla_status] || 99) - (order[b.sla_status] || 99)

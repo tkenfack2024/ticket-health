@@ -418,10 +418,10 @@ function LinkTicketModal({ changeId, existingTicketIds, onClose, onSuccess }) {
   const [loading, setLoading] = useState(true)
   const [linking, setLinking] = useState(null)
 
-  useEffect(() => {
+    useEffect(() => {
     api.getTickets()
-      .then(data => {
-        const available = data.filter(t => !existingTicketIds.includes(t.id))
+      .then(res => {
+        const available = (res.data || []).filter(t => !existingTicketIds.includes(t.id))
         setTickets(available)
         setLoading(false)
       })
