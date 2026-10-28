@@ -69,24 +69,39 @@ export default function AdminDpi() {
 function PatientsTab() {
   const navigate = useNavigate()
   const [patients, setPatients] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(0)
   const [showModal, setShowModal] = useState(false)
   const [editItem, setEditItem] = useState(null)
-
-  useEffect(() => { load() }, [search])
+  
+  const PAGE_SIZE = 12
 
   const load = async () => {
     try {
       setLoading(true)
-      const data = await api.patientsGetAll({ search: search || undefined })
-      setPatients(data)
+      const res = await api.patientsGetAll({ 
+        search: search || undefined,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE
+      })
+      setPatients(res.data || [])
+      setTotal(res.total || 0)
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
   }
+
+  useEffect(() => { 
+    load() 
+  }, [search, page])
+
+  useEffect(() => {
+    setPage(0)
+  }, [search])
 
   const handleSendToDoctor = async (patientId) => {
     if (!confirm('Envoyer ce patient dans la salle d\'attente du médecin ?')) return
@@ -98,6 +113,8 @@ function PatientsTab() {
     }
   }
 
+  const totalPages = Math.ceil(total / PAGE_SIZE)
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -106,7 +123,7 @@ function PatientsTab() {
             <User size={22} className="text-rose-600" />
             Accueil & Patients
           </h2>
-          <p className="text-slate-500 text-sm mt-1">Enregistrement des dossiers patients (DPI)</p>
+          <p className="text-slate-500 text-sm mt-1">{total} patient(s) enregistré(s)</p>
         </div>
         <button onClick={() => { setEditItem(null); setShowModal(true) }} className="flex items-center gap-2 bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700 text-sm font-medium">
           <UserPlus size={16} /> Nouveau Patient
@@ -121,56 +138,82 @@ function PatientsTab() {
       </div>
 
       {loading ? <div className="text-slate-500 text-center py-8">Chargement...</div> : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {patients.map(p => (
-            <div key={p.id} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow flex flex-col">
-              
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-bold">
-                    {p.first_name[0]}{p.last_name[0]}
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {patients.map(p => (
+              <div key={p.id} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow flex flex-col">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-bold">
+                      {p.first_name[0]}{p.last_name[0]}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-800 dark:text-slate-100">{p.last_name} {p.first_name}</h3>
+                      <p className="text-xs font-mono text-slate-500">{p.patient_code}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-bold text-slate-800 dark:text-slate-100">{p.last_name} {p.first_name}</h3>
-                    <p className="text-xs font-mono text-slate-500">{p.patient_code}</p>
+                  <div className="flex items-center gap-2">
+                    {p.blood_type && (
+                      <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded">
+                        <Droplet size={12} /> {p.blood_type}
+                      </span>
+                    )}
+                    <button onClick={() => { setEditItem(p); setShowModal(true) }} className="p-1 text-slate-400 hover:text-blue-600" title="Modifier">
+                      <Edit2 size={16} />
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {p.blood_type && (
-                    <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded">
-                      <Droplet size={12} /> {p.blood_type}
-                    </span>
-                  )}
-                  <button onClick={() => { setEditItem(p); setShowModal(true) }} className="p-1 text-slate-400 hover:text-blue-600" title="Modifier">
-                    <Edit2 size={16} />
+                
+                <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 mb-4 flex-1">
+                  <p className="flex items-center gap-2"><Activity size={14} /> Né(e) le {new Date(p.dob).toLocaleDateString('fr-FR')}</p>
+                  {p.phone && <p className="flex items-center gap-2"><Phone size={14} /> {p.phone}</p>}
+                  {p.address && <p className="flex items-center gap-2"><MapPin size={14} /> {p.address}</p>}
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-700 space-y-2">
+                  <button 
+                    onClick={() => navigate(`/admin/patients/${p.id}/records`)}
+                    className="w-full bg-slate-50 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                  >
+                    <FileText size={14} /> Voir le dossier médical
+                  </button>
+                  <button 
+                    onClick={() => handleSendToDoctor(p.id)}
+                    className="w-full bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white py-2 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    Envoyer en consultation
                   </button>
                 </div>
               </div>
-              
-              <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 mb-4 flex-1">
-                <p className="flex items-center gap-2"><Activity size={14} /> Né(e) le {new Date(p.dob).toLocaleDateString('fr-FR')}</p>
-                {p.phone && <p className="flex items-center gap-2"><Phone size={14} /> {p.phone}</p>}
-                {p.address && <p className="flex items-center gap-2"><MapPin size={14} /> {p.address}</p>}
-              </div>
+            ))}
+          </div>
 
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-700 space-y-2">
+          {patients.length === 0 && !loading && (
+            <div className="text-center py-12 text-slate-500 italic">Aucun patient trouvé.</div>
+          )}
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+              <p className="text-sm text-slate-500">Page {page + 1} sur {totalPages}</p>
+              <div className="flex gap-2">
                 <button 
-                  onClick={() => navigate(`/admin/patients/${p.id}/records`)}
-                  className="w-full bg-slate-50 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                  onClick={() => setPage(p => Math.max(0, p - 1))} 
+                  disabled={page === 0} 
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
                 >
-                  <FileText size={14} /> Voir le dossier médical
+                  ← Précédent
                 </button>
-
                 <button 
-                  onClick={() => handleSendToDoctor(p.id)}
-                  className="w-full bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white py-2 rounded-lg text-xs font-bold transition-colors"
+                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} 
+                  disabled={page >= totalPages - 1} 
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"
                 >
-                  Envoyer en consultation
+                  Suivant →
                 </button>
               </div>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
 
       {showModal && (
@@ -183,7 +226,6 @@ function PatientsTab() {
     </div>
   )
 }
-
 // ==========================================
 // MODALE PATIENT (INCHANGÉE)
 // ==========================================

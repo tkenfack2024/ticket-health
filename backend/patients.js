@@ -119,10 +119,13 @@ export function createPatientRouter(db, logAction) {
     limits: { fileSize: 5 * 1024 * 1024 }
   })
 
-  // ==================== GET /api/patients ====================
+    // ==================== GET /api/patients ====================
   router.get('/', async (req, res) => {
-    const { search } = req.query
+    const { search, limit = 20, offset = 0 } = req.query
     const { tenantId } = req.user
+
+    const limitNum = parseInt(limit)
+    const offsetNum = parseInt(offset)
 
     if (tenantId) {
       const tenant = TENANTS[tenantId]
@@ -130,16 +133,27 @@ export function createPatientRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
-        let query = 'SELECT * FROM patients WHERE 1=1'
+        let whereClause = 'WHERE 1=1'
         const args = []
         if (search) {
-          query += ' AND (first_name LIKE ? OR last_name LIKE ? OR patient_code LIKE ?)'
+          whereClause += ' AND (first_name LIKE ? OR last_name LIKE ? OR patient_code LIKE ?)'
           const s = `%${search}%`
           args.push(s, s, s)
         }
-        query += ' ORDER BY last_name ASC, first_name ASC'
 
-        const result = await tursoDb.execute({ sql: query, args })
+        // 1. Compter le total (pour la pagination)
+        const countResult = await tursoDb.execute({
+          sql: `SELECT COUNT(*) as c FROM patients ${whereClause}`,
+          args
+        })
+        const total = countResult.rows[0].c
+
+        // 2. Récupérer la page
+        const result = await tursoDb.execute({
+          sql: `SELECT * FROM patients ${whereClause} ORDER BY last_name ASC, first_name ASC LIMIT ? OFFSET ?`,
+          args: [...args, limitNum, offsetNum]
+        })
+        
         const patients = result.rows
         const hasMedicalAccess = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'medical.read')
 
@@ -152,22 +166,26 @@ export function createPatientRouter(db, logAction) {
             delete p.allergies
           }
         }
-        return res.json(patients)
+        return res.json({ data: patients, total })
       } catch (err) {
         console.error('Erreur Turso GET patients:', err)
         return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
       }
     }
 
-    let query = 'SELECT * FROM patients WHERE 1=1'
+    // --- MODE SQLITE ---
+    let whereClause = 'WHERE 1=1'
     const params = []
     if (search) {
-      query += ' AND (first_name LIKE ? OR last_name LIKE ? OR patient_code LIKE ?)'
+      whereClause += ' AND (first_name LIKE ? OR last_name LIKE ? OR patient_code LIKE ?)'
       const s = `%${search}%`
       params.push(s, s, s)
     }
-    query += ' ORDER BY last_name ASC, first_name ASC'
-    const patients = db.prepare(query).all(...params)
+
+    const total = db.prepare(`SELECT COUNT(*) as c FROM patients ${whereClause}`).get(...params).c
+    const patients = db.prepare(`SELECT * FROM patients ${whereClause} ORDER BY last_name ASC, first_name ASC LIMIT ? OFFSET ?`)
+      .all(...params, limitNum, offsetNum)
+
     const hasMedicalAccess = userHasPermission(db, req.user.id, req.user.role, 'medical.read')
     for (const p of patients) {
       if (hasMedicalAccess) {
@@ -178,7 +196,7 @@ export function createPatientRouter(db, logAction) {
         delete p.allergies
       }
     }
-    res.json(patients)
+    res.json({ data: patients, total })
   })
 
   // ==================== GET /api/patients/visits ====================
