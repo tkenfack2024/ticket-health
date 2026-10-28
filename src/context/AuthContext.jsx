@@ -49,11 +49,14 @@ export function AuthProvider({ children }) {
   }
 
   const logout = () => {
-    setUser(null)
-    setToken(null)
-    localStorage.removeItem('ht_token')
-    localStorage.removeItem('ht_user')
-  }
+  setUser(null)
+  setToken(null)
+  localStorage.removeItem('ht_token')
+  localStorage.removeItem('ht_user')
+  
+  // ✅ Forcer le rechargement complet de la page
+  window.location.href = '/login'
+}
 
   const isAuthenticated = !!token && !!user
   const isAdmin = user?.role === 'admin'
