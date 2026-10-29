@@ -1022,9 +1022,27 @@ export function createAdminRouter(db, logAction) {
 
   // ==================== PERMISSIONS ====================
 
-  // ---- GET /api/admin/permissions ----
+    // ---- GET /api/admin/permissions ----
   // Liste toutes les permissions disponibles
-  router.get('/permissions', (req, res) => {
+  router.get('/permissions', async (req, res) => {
+    const { tenantId } = req.user
+
+    // --- MODE TURSO ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const result = await tursoDb.execute('SELECT * FROM permissions ORDER BY module, code')
+        return res.json(result.rows)
+      } catch (err) {
+        console.error('Erreur Turso GET permissions:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
     const permissions = db.prepare('SELECT * FROM permissions ORDER BY module, code').all()
     res.json(permissions)
   })
