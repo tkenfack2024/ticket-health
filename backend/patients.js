@@ -2,19 +2,10 @@ import { Router } from 'express'
 import multer from 'multer'
 import { authRequired, adminOnly } from './auth.js'
 import { encrypt, decrypt } from './encryption.js'
-import { userHasPermission } from './knowledge.js'
+// ✅ IMPORT DE LA BONNE FONCTION
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
-
-// Version simplifiée pour Turso (car userHasPermission est synchrone)
-async function userHasPermissionTurso(tursoDb, userId, role, code) {
-  if (role === 'admin') return true
-  const result = await tursoDb.execute({
-    sql: 'SELECT permission_code FROM user_permissions WHERE user_id = ? AND permission_code = ?',
-    args: [userId, code]
-  })
-  return result.rows.length > 0
-}
 
 export function initPatientTables(db) {
   db.exec(`
@@ -119,7 +110,7 @@ export function createPatientRouter(db, logAction) {
     limits: { fileSize: 5 * 1024 * 1024 }
   })
 
-    // ==================== GET /api/patients ====================
+  // ==================== GET /api/patients ====================
   router.get('/', async (req, res) => {
     const { search, limit = 20, offset = 0 } = req.query
     const { tenantId } = req.user
@@ -141,21 +132,20 @@ export function createPatientRouter(db, logAction) {
           args.push(s, s, s)
         }
 
-        // 1. Compter le total (pour la pagination)
         const countResult = await tursoDb.execute({
           sql: `SELECT COUNT(*) as c FROM patients ${whereClause}`,
           args
         })
         const total = countResult.rows[0].c
 
-        // 2. Récupérer la page
         const result = await tursoDb.execute({
           sql: `SELECT * FROM patients ${whereClause} ORDER BY last_name ASC, first_name ASC LIMIT ? OFFSET ?`,
           args: [...args, limitNum, offsetNum]
         })
         
         const patients = result.rows
-        const hasMedicalAccess = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'medical.read')
+        // ✅ Correction de la permission
+        const hasMedicalAccess = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'patients.medical_read')
 
         for (const p of patients) {
           if (hasMedicalAccess) {
@@ -186,7 +176,8 @@ export function createPatientRouter(db, logAction) {
     const patients = db.prepare(`SELECT * FROM patients ${whereClause} ORDER BY last_name ASC, first_name ASC LIMIT ? OFFSET ?`)
       .all(...params, limitNum, offsetNum)
 
-    const hasMedicalAccess = userHasPermission(db, req.user.id, req.user.role, 'medical.read')
+    // ✅ Correction de la permission
+    const hasMedicalAccess = userHasPermission(db, req.user.id, req.user.role, 'patients.medical_read')
     for (const p of patients) {
       if (hasMedicalAccess) {
         p.nir = decrypt(p.nir)
@@ -480,7 +471,8 @@ export function createPatientRouter(db, logAction) {
           r.exams = exams.filter(e => e.record_id === r.id)
         }
 
-        const hasMedicalAccess = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'medical.read')
+        // ✅ Correction de la permission
+        const hasMedicalAccess = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'patients.medical_read')
         for (const r of records) {
           if (hasMedicalAccess) {
             r.chief_complaint = decrypt(r.chief_complaint)
@@ -499,6 +491,7 @@ export function createPatientRouter(db, logAction) {
       }
     }
 
+    // --- MODE SQLITE ---
     const records = db.prepare(`
       SELECT m.*, u.name as doctor_name FROM medical_records m
       LEFT JOIN users u ON m.doctor_id = u.id
@@ -510,7 +503,8 @@ export function createPatientRouter(db, logAction) {
       r.exams = exams.filter(e => e.record_id === r.id)
     }
 
-    const hasMedicalAccess = userHasPermission(db, req.user.id, req.user.role, 'medical.read')
+    // ✅ Correction de la permission
+    const hasMedicalAccess = userHasPermission(db, req.user.id, req.user.role, 'patients.medical_read')
     for (const r of records) {
       if (hasMedicalAccess) {
         r.chief_complaint = decrypt(r.chief_complaint)
@@ -859,7 +853,8 @@ export function createPatientRouter(db, logAction) {
         const patient = result.rows[0]
         if (!patient) return res.status(404).json({ error: 'Patient non trouvé' })
 
-        const hasMedicalAccess = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'medical.read')
+        // ✅ Correction de la permission
+        const hasMedicalAccess = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'patients.medical_read')
         if (hasMedicalAccess) {
           patient.nir = decrypt(patient.nir)
           patient.allergies = decrypt(patient.allergies)
@@ -874,9 +869,12 @@ export function createPatientRouter(db, logAction) {
       }
     }
 
+    // --- MODE SQLITE ---
     const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(req.params.id)
     if (!patient) return res.status(404).json({ error: 'Patient non trouvé' })
-    const hasMedicalAccess = userHasPermission(db, req.user.id, req.user.role, 'medical.read')
+    
+    // ✅ Correction de la permission
+    const hasMedicalAccess = userHasPermission(db, req.user.id, req.user.role, 'patients.medical_read')
     if (hasMedicalAccess) {
       patient.nir = decrypt(patient.nir)
       patient.allergies = decrypt(patient.allergies)

@@ -3,12 +3,14 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Activity, FileText, Clock, Printer, Download, Calendar, Award } from 'lucide-react'
 import { api } from '../../api'
+import { useAuth } from '../../context/AuthContext'
 import { generateOrdonnancePDF } from '../../utils/pdfGenerator'
 import { mapConsultationToPdf } from '../../utils/mapConsultation'
 import { generateBonExamen, generateCompteRendu, generateArretTravail, generateCertificat } from '../../utils/medicalDocsGenerator'
 
 export default function MedicalRecord() {
   const { id } = useParams()
+  const { hasPermission } = useAuth()
   const [patient, setPatient] = useState(null)
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
@@ -23,10 +25,12 @@ export default function MedicalRecord() {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [patientsData, recordsData] = await Promise.all([
+      const [patientsRes, recordsData] = await Promise.all([
         api.patientsGetAll(),
         api.recordsGetAll(id)
       ])
+      // On extrait le tableau 'data' de la réponse de l'API
+      const patientsData = patientsRes.data || []
       const currentPatient = patientsData.find(p => p.id === parseInt(id))
       setPatient(currentPatient)
       setRecords(recordsData)
@@ -69,7 +73,7 @@ export default function MedicalRecord() {
     }
   }
 
-	  const handleGenerateDocument = (type, record) => {
+  const handleGenerateDocument = (type, record) => {
     if (!patient) return
     const medecin = {
       nom: record.doctor_name || 'Médecin',
@@ -116,9 +120,12 @@ export default function MedicalRecord() {
               )}
             </div>
           </div>
-          <button onClick={() => setShowConsultModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium text-sm flex items-center gap-2">
-            <Activity size={16} /> Nouvelle Consultation
-          </button>
+          
+          {hasPermission('records.create') && (
+            <button onClick={() => setShowConsultModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium text-sm flex items-center gap-2">
+              <Activity size={16} /> Nouvelle Consultation
+            </button>
+          )}
         </div>
       </div>
 
@@ -153,12 +160,16 @@ export default function MedicalRecord() {
 
                 {/* Boutons */}
                 <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700 flex gap-2 flex-wrap">
-                  <button onClick={() => setSelectedRecord(r.id)} className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded hover:bg-blue-100 font-medium transition-colors">
-                    + Ordonnance
-                  </button>
-                  <button onClick={() => setSelectedRecordForExam(r.id)} className="text-xs bg-purple-50 text-purple-600 px-3 py-1.5 rounded hover:bg-purple-100 font-medium transition-colors">
-                    + Demander un examen
-                  </button>
+                  {hasPermission('prescriptions.create') && (
+                    <button onClick={() => setSelectedRecord(r.id)} className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded hover:bg-blue-100 font-medium transition-colors">
+                      + Ordonnance
+                    </button>
+                  )}
+                  {hasPermission('exams.create') && (
+                    <button onClick={() => setSelectedRecordForExam(r.id)} className="text-xs bg-purple-50 text-purple-600 px-3 py-1.5 rounded hover:bg-purple-100 font-medium transition-colors">
+                      + Demander un examen
+                    </button>
+                  )}
 
                   {/* Bouton Imprimer l'ordonnance PDF */}
                   <button
@@ -169,35 +180,35 @@ export default function MedicalRecord() {
                     <Printer size={12} /> Imprimer l'ordonnance
                   </button>
 
-		                  {/* Nouveaux documents */}
-                  <button
-                    onClick={() => handleGenerateDocument('bon-examen', r)}
-                    className="text-xs bg-amber-50 text-amber-700 px-3 py-1.5 rounded hover:bg-amber-600 hover:text-white font-medium transition-colors flex items-center gap-1"
-                  >
-                    <FileText size={12} /> Bon d'examen
-                  </button>
-
-                  <button
-                    onClick={() => handleGenerateDocument('compte-rendu', r)}
-                    className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded hover:bg-indigo-600 hover:text-white font-medium transition-colors flex items-center gap-1"
-                  >
-                    <FileText size={12} /> Compte-rendu
-                  </button>
-
-                  <button
-                    onClick={() => setDocModal({ type: 'arret', record: r })}
-                    className="text-xs bg-rose-50 text-rose-700 px-3 py-1.5 rounded hover:bg-rose-600 hover:text-white font-medium transition-colors flex items-center gap-1"
-                  >
-                    <Calendar size={12} /> Arrêt de travail
-                  </button>
-
-                  <button
-                    onClick={() => setDocModal({ type: 'certificat', record: r })}
-                    className="text-xs bg-purple-50 text-purple-700 px-3 py-1.5 rounded hover:bg-purple-600 hover:text-white font-medium transition-colors flex items-center gap-1"
-                  >
-                    <Award size={12} /> Certificat
-                  </button>
-
+                  {/* Nouveaux documents */}
+                  {hasPermission('records.create') && (
+                    <>
+                      <button
+                        onClick={() => handleGenerateDocument('bon-examen', r)}
+                        className="text-xs bg-amber-50 text-amber-700 px-3 py-1.5 rounded hover:bg-amber-600 hover:text-white font-medium transition-colors flex items-center gap-1"
+                      >
+                        <FileText size={12} /> Bon d'examen
+                      </button>
+                      <button
+                        onClick={() => handleGenerateDocument('compte-rendu', r)}
+                        className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded hover:bg-indigo-600 hover:text-white font-medium transition-colors flex items-center gap-1"
+                      >
+                        <FileText size={12} /> Compte-rendu
+                      </button>
+                      <button
+                        onClick={() => setDocModal({ type: 'arret', record: r })}
+                        className="text-xs bg-rose-50 text-rose-700 px-3 py-1.5 rounded hover:bg-rose-600 hover:text-white font-medium transition-colors flex items-center gap-1"
+                      >
+                        <Calendar size={12} /> Arrêt de travail
+                      </button>
+                      <button
+                        onClick={() => setDocModal({ type: 'certificat', record: r })}
+                        className="text-xs bg-purple-50 text-purple-700 px-3 py-1.5 rounded hover:bg-purple-600 hover:text-white font-medium transition-colors flex items-center gap-1"
+                      >
+                        <Award size={12} /> Certificat
+                      </button>
+                    </>
+                  )}
 
                   {/* Bouton Télécharger PDF */}
                   <button
@@ -235,28 +246,28 @@ export default function MedicalRecord() {
                   </div>
                 )}
 
-		{/* ✅ AJOUT : AFFICHAGE DES ORDONNANCES */}
-{r.prescriptions && r.prescriptions.length > 0 && (
-  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
-    <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">Ordonnances</h4>
-    <div className="space-y-2">
-      {r.prescriptions.map(p => (
-        <div key={p.id} className="flex justify-between items-center text-sm bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
-          <span className="font-medium text-slate-700 dark:text-slate-300">
-            💊 {p.medication} — {p.dosage}{p.duration ? ` (${p.duration})` : ''}
-          </span>
-          <span className={`text-xs font-bold ${
-            p.status === 'Active' ? 'text-blue-600' :
-            p.status === 'Terminée' ? 'text-green-600' : 'text-slate-500'
-          }`}>
-            {p.status === 'Active' ? '🟢 Active' :
-             p.status === 'Terminée' ? '✅ Terminée' : '⚪ ' + (p.status || 'Inconnu')}
-          </span>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+                {/* ✅ AFFICHAGE DES ORDONNANCES */}
+                {r.prescriptions && r.prescriptions.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
+                    <h4 className="text-xs font-bold text-slate-500 mb-2 uppercase">Ordonnances</h4>
+                    <div className="space-y-2">
+                      {r.prescriptions.map(p => (
+                        <div key={p.id} className="flex justify-between items-center text-sm bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+                          <span className="font-medium text-slate-700 dark:text-slate-300">
+                            💊 {p.medication} — {p.dosage}{p.duration ? ` (${p.duration})` : ''}
+                          </span>
+                          <span className={`text-xs font-bold ${
+                            p.status === 'Active' ? 'text-blue-600' :
+                            p.status === 'Terminée' ? 'text-green-600' : 'text-slate-500'
+                          }`}>
+                            {p.status === 'Active' ? '🟢 Active' :
+                             p.status === 'Terminée' ? '✅ Terminée' : '⚪ ' + (p.status || 'Inconnu')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
               </div>
             </div>
@@ -301,8 +312,6 @@ export default function MedicalRecord() {
     </div>
   )
 }
-
-	
 
 // ============ MODALE CONSULTATION ============
 function ConsultationModal({ patientId, onClose, onSuccess }) {

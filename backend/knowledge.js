@@ -102,17 +102,42 @@ export function initKnowledgeTables(db) {
 
 export function userHasPermission(db, userId, userRole, permissionCode) {
   if (userRole === 'admin') return true
-  const perm = db.prepare(`SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_code = ?`).get(userId, permissionCode)
-  return !!perm
+  
+  // 1. Vérifier les permissions individuelles
+  const direct = db.prepare('SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_code = ?')
+    .get(userId, permissionCode)
+  if (direct) return true
+  
+  // 2. Vérifier les permissions héritées du rôle métier (custom_role)
+  const viaRole = db.prepare(`
+    SELECT 1 FROM role_permissions rp
+    JOIN users u ON u.custom_role = (SELECT name FROM roles WHERE id = rp.role_id)
+    WHERE u.id = ? AND rp.permission_code = ?
+  `).get(userId, permissionCode)
+  
+  return !!viaRole
 }
 
-async function userHasPermissionTurso(tursoDb, userId, userRole, permissionCode) {
+export async function userHasPermissionTurso(tursoDb, userId, userRole, permissionCode) {
   if (userRole === 'admin') return true
-  const result = await tursoDb.execute({
+
+  // 1. Vérifier les permissions individuelles
+  const direct = await tursoDb.execute({
     sql: 'SELECT 1 FROM user_permissions WHERE user_id = ? AND permission_code = ?',
     args: [userId, permissionCode]
   })
-  return result.rows.length > 0
+  if (direct.rows.length > 0) return true
+
+  // 2. Vérifier les permissions héritées du rôle métier
+  const viaRole = await tursoDb.execute({
+    sql: `
+      SELECT 1 FROM role_permissions rp
+      JOIN users u ON u.custom_role = (SELECT name FROM roles WHERE id = rp.role_id)
+      WHERE u.id = ? AND rp.permission_code = ?
+    `,
+    args: [userId, permissionCode]
+  })
+  return viaRole.rows.length > 0
 }
 
 export function getUserPermissions(db, userId, userRole) {
@@ -743,11 +768,28 @@ export function createKnowledgeRouter(db, logAction) {
           const result = await tursoDb.execute('SELECT code FROM permissions')
           permissions = result.rows.map(p => p.code)
         } else {
-          const result = await tursoDb.execute({
+          // Permissions individuelles
+          const userPerms = await tursoDb.execute({
             sql: 'SELECT permission_code as code FROM user_permissions WHERE user_id = ?',
             args: [req.user.id]
           })
-          permissions = result.rows.map(p => p.code)
+          permissions.push(...userPerms.rows.map(p => p.code))
+
+          // Permissions héritées du rôle (si custom_role)
+          const userCheck = await tursoDb.execute({ 
+            sql: 'SELECT custom_role FROM users WHERE id = ?', 
+            args: [req.user.id] 
+          })
+          const customRole = userCheck.rows[0]?.custom_role
+
+          if (customRole) {
+            const rolePerms = await tursoDb.execute({
+              sql: `SELECT rp.permission_code as code FROM role_permissions rp JOIN roles r ON rp.role_id = r.id WHERE r.name = ?`,
+              args: [customRole]
+            })
+            permissions.push(...rolePerms.rows.map(p => p.code))
+          }
+          permissions = [...new Set(permissions)]
         }
         return res.json({ permissions })
       } catch (err) {

@@ -124,19 +124,19 @@ export default function Layout() {
 
           <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-1">
             
-            {/* Menu Gestion DPI (Lien direct) */}
-            {(isAdmin || hasPermission('patient.read') || hasPermission('medical.read')) && (
-              <NavLink to="/admin/patients" className={linkClass}>
-                <Users size={18} /> Gestion DPI
-              </NavLink>
-            )}
+            {/* Menu Gestion DPI */}
+{(isAdmin || hasPermission('patients.list') || hasPermission('medical.read') || user?.custom_role) && (
+  <NavLink to="/admin/patients" className={linkClass}>
+    <Users size={18} /> Gestion DPI
+  </NavLink>
+)}
 
-            {/* Menu Gestion des Ressources (Lien direct) */}
-            {(isAdmin || hasPermission('facility.manage') || hasPermission('resource.manage')) && (
-              <NavLink to="/admin/ressources" className={linkClass}>
-                <Building size={18} /> Gestion des Ressources
-              </NavLink>
-            )}
+            {/* Menu Gestion des Ressources */}
+{(isAdmin || hasPermission('facility.tree') || hasPermission('resources.list') || user?.custom_role) && (
+  <NavLink to="/admin/ressources" className={linkClass}>
+    <Building size={18} /> Gestion des Ressources
+  </NavLink>
+)}
 
             {/* Menu Administration (Lien direct) */}
             {isAdmin && (
@@ -146,11 +146,13 @@ export default function Layout() {
             )}
           </div>
 
-          <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-700">
-            <NavLink to="/portal" className={linkClass}>
-              <ExternalLink size={18} /> Portail utilisateur
-            </NavLink>
-          </div>
+                    {isAdmin && (
+            <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-700">
+              <NavLink to="/portal" className={linkClass}>
+                <ExternalLink size={18} /> Portail utilisateur
+              </NavLink>
+            </div>
+          )}
         </nav>
 
         <div className="border-t border-slate-200 dark:border-slate-700 p-4">

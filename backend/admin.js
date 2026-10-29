@@ -155,25 +155,83 @@ export function createAdminRouter(db, logAction) {
     res.status(201).json(newUser)
   })
 
-    // ---- PATCH /api/admin/users/:id ----
+  // ---- PATCH /api/admin/users/:id ----
   // Modifier un utilisateur (rôle, nom, téléphone, actif, custom_role)
-  router.patch('/users/:id', (req, res) => {
+  router.patch('/users/:id', async (req, res) => {
     const { name, phone, role, custom_role, active } = req.body
     const targetId = parseInt(req.params.id)
-
-    const target = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId)
-    if (!target) return res.status(404).json({ error: 'Utilisateur non trouvé' })
-
-    // Protection : ne peut pas se rétrograder soi-même
-    if (targetId === req.user.id && role && role !== 'admin') {
-      return res.status(403).json({ error: 'Vous ne pouvez pas modifier votre propre rôle' })
-    }
+    const { tenantId } = req.user
 
     if (role && !['admin', 'technicien', 'user'].includes(role)) {
       return res.status(400).json({ error: 'Rôle de base invalide' })
     }
 
-    // Vérifier custom_role si fourni
+    // --- MODE TURSO (Multi-tenant) ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const check = await tursoDb.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [targetId] })
+        const target = check.rows[0]
+        if (!target) return res.status(404).json({ error: 'Utilisateur non trouvé' })
+
+        if (targetId === req.user.id && role && role !== 'admin') {
+          return res.status(403).json({ error: 'Vous ne pouvez pas modifier votre propre rôle' })
+        }
+
+        if (custom_role) {
+          const roleExists = await tursoDb.execute({ sql: 'SELECT id FROM roles WHERE name = ?', args: [custom_role] })
+          if (roleExists.rows.length === 0) {
+            return res.status(400).json({ error: 'Ce rôle personnalisé n\'existe pas' })
+          }
+        }
+
+        await tursoDb.execute({
+          sql: `
+            UPDATE users
+            SET name = COALESCE(?, name),
+                phone = COALESCE(?, phone),
+                role = COALESCE(?, role),
+                custom_role = CASE WHEN ? = '__CLEAR__' THEN NULL ELSE COALESCE(?, custom_role) END,
+                active = COALESCE(?, active)
+            WHERE id = ?
+          `,
+          args: [
+            name || null,
+            phone !== undefined ? phone : null,
+            role || null,
+            custom_role === null ? '__CLEAR__' : 'NO_CHANGE',
+            custom_role || null,
+            active !== undefined ? (active ? 1 : 0) : null,
+            targetId
+          ]
+        })
+
+        const updated = await tursoDb.execute({
+          sql: 'SELECT id, name, email, phone, role, custom_role, active, created_at FROM users WHERE id = ?',
+          args: [targetId]
+        })
+        const u = updated.rows[0]
+
+        logAction(req.user.id, req.user.name, 'update', 'user', targetId, `Utilisateur modifié : ${u.email} (${u.role}${u.custom_role ? ' / ' + u.custom_role : ''}, ${u.active ? 'actif' : 'désactivé'}) [Turso]`)
+        
+        return res.json(u)
+      } catch (err) {
+        console.error('Erreur Turso PATCH user:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE (Local) ---
+    const target = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId)
+    if (!target) return res.status(404).json({ error: 'Utilisateur non trouvé' })
+
+    if (targetId === req.user.id && role && role !== 'admin') {
+      return res.status(403).json({ error: 'Vous ne pouvez pas modifier votre propre rôle' })
+    }
+
     if (custom_role && custom_role !== null) {
       const roleExists = db.prepare('SELECT id FROM roles WHERE name = ?').get(custom_role)
       if (!roleExists) {
@@ -972,67 +1030,106 @@ export function createAdminRouter(db, logAction) {
   })
 
   // ---- GET /api/admin/users-permissions ----
-  // Liste tous les users avec leurs permissions
-    router.get('/users-permissions', (req, res) => {
-    const users = db.prepare(`
-      SELECT id, name, email, role, custom_role, active FROM users ORDER BY id ASC
-    `).all()
+  router.get('/users-permissions', async (req, res) => {
+    const { tenantId } = req.user
 
+    // --- MODE TURSO ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const usersResult = await tursoDb.execute(`
+          SELECT id, name, email, role, custom_role, active FROM users ORDER BY id ASC
+        `)
+        const users = usersResult.rows
+
+        const result = []
+        for (const user of users) {
+          let perms = []
+          if (user.role === 'admin') {
+            const pResult = await tursoDb.execute('SELECT code FROM permissions')
+            perms = pResult.rows.map(p => p.code)
+          } else {
+            if (user.custom_role) {
+              const rolePerms = await tursoDb.execute({
+                sql: `SELECT rp.permission_code as code FROM role_permissions rp JOIN roles r ON rp.role_id = r.id WHERE r.name = ?`,
+                args: [user.custom_role]
+              })
+              perms.push(...rolePerms.rows.map(p => p.code))
+            }
+            const userPerms = await tursoDb.execute({
+              sql: 'SELECT permission_code as code FROM user_permissions WHERE user_id = ?',
+              args: [user.id]
+            })
+            perms.push(...userPerms.rows.map(p => p.code))
+            perms = [...new Set(perms)]
+          }
+          result.push({ ...user, permissions: perms, isAdmin: user.role === 'admin' })
+        }
+        return res.json(result)
+      } catch (err) {
+        console.error('Erreur Turso GET users-permissions:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    const users = db.prepare(`SELECT id, name, email, role, custom_role, active FROM users ORDER BY id ASC`).all()
     const result = users.map(user => {
       let perms = []
-      
       if (user.role === 'admin') {
         perms = db.prepare('SELECT code FROM permissions').all().map(p => p.code)
       } else {
-        // 1. Permissions du custom_role
         if (user.custom_role) {
           const rolePerms = db.prepare(`
-            SELECT rp.permission_code as code 
-            FROM role_permissions rp 
-            JOIN roles r ON rp.role_id = r.id 
-            WHERE r.name = ?
+            SELECT rp.permission_code as code FROM role_permissions rp JOIN roles r ON rp.role_id = r.id WHERE r.name = ?
           `).all(user.custom_role).map(p => p.code)
           perms.push(...rolePerms)
         }
-        // 2. Permissions individuelles
-        const userPerms = db.prepare('SELECT permission_code as code FROM user_permissions WHERE user_id = ?')
-          .all(user.id).map(p => p.code)
+        const userPerms = db.prepare('SELECT permission_code as code FROM user_permissions WHERE user_id = ?').all(user.id).map(p => p.code)
         perms.push(...userPerms)
-        // Dédoublonner
         perms = [...new Set(perms)]
       }
-
-      return {
-        ...user,
-        permissions: perms,
-        isAdmin: user.role === 'admin',
-      }
+      return { ...user, permissions: perms, isAdmin: user.role === 'admin' }
     })
-
     res.json(result)
   })
 
-  // POST /api/admin/permissions
-  router.post('/permissions', (req, res) => {
-    const { code, label, module, description } = req.body
-    
-    if (!code || !label || !module) {
-      return res.status(400).json({ error: 'Code, label et module sont obligatoires' })
+      // POST /api/admin/roles/:id/permissions
+  router.post('/roles/:id/permissions', async (req, res) => {
+    const { permission_code } = req.body
+    const { tenantId } = req.user
+    const roleId = req.params.id
+
+    if (!permission_code) return res.status(400).json({ error: 'permission_code obligatoire' })
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        // OR IGNORE permet de ne pas planter si la permission existe déjà
+        await tursoDb.execute({
+          sql: 'INSERT OR IGNORE INTO role_permissions (role_id, permission_code) VALUES (?, ?)',
+          args: [roleId, permission_code]
+        })
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('[TURSO] Erreur:', err.message)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
     }
 
+    // --- MODE SQLITE ---
     try {
-      // On nettoie le code (minuscules, pas d'espaces)
-      const cleanCode = code.trim().toLowerCase().replace(/\s+/g, '.')
-      
-      const result = db.prepare(`
-        INSERT INTO permissions (code, label, module, description)
-        VALUES (?, ?, ?, ?)
-      `).run(cleanCode, label.trim(), module.trim().toLowerCase(), description || null)
-
-      logAction(req.user.id, req.user.name, 'create', 'permission', result.lastInsertRowid, `Permission créée : ${cleanCode}`)
-      res.status(201).json({ success: true, code: cleanCode })
+      // OR IGNORE ici aussi
+      db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission_code) VALUES (?, ?)')
+        .run(roleId, permission_code)
+      res.json({ success: true })
     } catch (err) {
-      if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce code de permission existe déjà' })
       res.status(500).json({ error: err.message })
     }
   })
@@ -1214,11 +1311,31 @@ export function createAdminRouter(db, logAction) {
     })
   })
 
-
   // ==================== RÔLES DYNAMIQUES ====================
 
   // GET /api/admin/roles
-  router.get('/roles', (req, res) => {
+  router.get('/roles', async (req, res) => {
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const result = await tursoDb.execute(`
+          SELECT r.*, 
+          (SELECT COUNT(*) FROM users u WHERE u.custom_role = r.name) as user_count,
+          (SELECT COUNT(*) FROM role_permissions rp WHERE rp.role_id = r.id) as perm_count
+          FROM roles r ORDER BY r.name ASC
+        `)
+        return res.json(result.rows)
+      } catch (err) {
+        console.error('Erreur Turso GET roles:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
     const roles = db.prepare(`
       SELECT r.*, 
       (SELECT COUNT(*) FROM users u WHERE u.custom_role = r.name) as user_count,
@@ -1229,15 +1346,32 @@ export function createAdminRouter(db, logAction) {
   })
 
   // POST /api/admin/roles
-  router.post('/roles', (req, res) => {
+  router.post('/roles', async (req, res) => {
     const { name, description } = req.body
+    const { tenantId } = req.user
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Le nom est obligatoire' })
     }
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        const result = await tursoDb.execute({
+          sql: 'INSERT INTO roles (name, description) VALUES (?, ?)',
+          args: [name.trim(), description || null]
+        })
+        return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) })
+      } catch (err) {
+        if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce rôle existe déjà' })
+        return res.status(500).json({ error: err.message })
+      }
+    }
+
     try {
       const result = db.prepare('INSERT INTO roles (name, description) VALUES (?, ?)')
         .run(name.trim(), description || null)
-      logAction(req.user.id, req.user.name, 'create', 'role', result.lastInsertRowid, `Rôle créé : ${name}`)
       res.status(201).json({ success: true, id: result.lastInsertRowid })
     } catch (err) {
       if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce rôle existe déjà' })
@@ -1246,29 +1380,154 @@ export function createAdminRouter(db, logAction) {
   })
 
   // GET /api/admin/roles/:id/permissions
-  router.get('/roles/:id/permissions', (req, res) => {
-    const perms = db.prepare('SELECT permission_code FROM role_permissions WHERE role_id = ?').all(req.params.id)
+  router.get('/roles/:id/permissions', async (req, res) => {
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        const result = await tursoDb.execute({
+          sql: 'SELECT permission_code FROM role_permissions WHERE role_id = ? ORDER BY permission_code ASC',
+          args: [req.params.id]
+        })
+        return res.json(result.rows.map(p => p.permission_code))
+      } catch (err) {
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    const perms = db.prepare('SELECT permission_code FROM role_permissions WHERE role_id = ? ORDER BY permission_code ASC').all(req.params.id)
     res.json(perms.map(p => p.permission_code))
   })
 
   // POST /api/admin/roles/:id/permissions
-  router.post('/roles/:id/permissions', (req, res) => {
+  router.post('/roles/:id/permissions', async (req, res) => {
     const { permission_code } = req.body
+    const { tenantId } = req.user
     if (!permission_code) return res.status(400).json({ error: 'permission_code obligatoire' })
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        // OR IGNORE évite les erreurs 400
+        await tursoDb.execute({
+          sql: 'INSERT OR IGNORE INTO role_permissions (role_id, permission_code) VALUES (?, ?)',
+          args: [req.params.id, permission_code]
+        })
+        return res.json({ success: true })
+      } catch (err) {
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
     try {
-      db.prepare('INSERT INTO role_permissions (role_id, permission_code) VALUES (?, ?)')
+      db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission_code) VALUES (?, ?)')
         .run(req.params.id, permission_code)
       res.json({ success: true })
     } catch (err) {
-      res.status(400).json({ error: 'Permission déjà accordée à ce rôle' })
+      res.status(500).json({ error: err.message })
     }
   })
 
   // DELETE /api/admin/roles/:id/permissions/:code
-  router.delete('/roles/:id/permissions/:code', (req, res) => {
-    db.prepare('DELETE FROM role_permissions WHERE role_id = ? AND permission_code = ?')
-      .run(req.params.id, req.params.code)
-    res.json({ success: true })
+  router.delete('/roles/:id/permissions/:code', async (req, res) => {
+    const { tenantId } = req.user
+    const roleId = req.params.id
+    const permissionCode = req.params.code
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        await tursoDb.execute({
+          sql: 'DELETE FROM role_permissions WHERE role_id = ? AND permission_code = ?',
+          args: [roleId, permissionCode]
+        })
+        return res.json({ success: true })
+      } catch (err) {
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    try {
+      db.prepare('DELETE FROM role_permissions WHERE role_id = ? AND permission_code = ?')
+        .run(roleId, permissionCode)
+      res.json({ success: true })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  // ---- POST /api/admin/users/:id/permissions ----
+  router.post('/users/:id/permissions', async (req, res) => {
+    const targetId = parseInt(req.params.id)
+    const { permission_code } = req.body
+    const { tenantId } = req.user
+
+    if (!permission_code) return res.status(400).json({ error: 'permission_code obligatoire' })
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        await tursoDb.execute({
+          sql: 'INSERT OR IGNORE INTO user_permissions (user_id, permission_code, granted_by_id, granted_by_name) VALUES (?, ?, ?, ?)',
+          args: [targetId, permission_code, req.user.id, req.user.name]
+        })
+        return res.status(201).json({ success: true })
+      } catch (err) {
+        return res.status(500).json({ error: err.message })
+      }
+    }
+
+    const user = db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(targetId)
+    if (!user) return res.status(404).json({ error: 'Utilisateur non trouvé' })
+    if (user.role === 'admin') return res.status(400).json({ error: 'Les admins ont déjà toutes les permissions' })
+
+    try {
+      db.prepare(`INSERT OR IGNORE INTO user_permissions (user_id, permission_code, granted_by_id, granted_by_name) VALUES (?, ?, ?, ?)`)
+        .run(targetId, permission_code, req.user.id, req.user.name)
+      res.status(201).json({ success: true })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+
+  // ---- DELETE /api/admin/users/:id/permissions/:code ----
+  router.delete('/users/:id/permissions/:code', async (req, res) => {
+    const targetId = parseInt(req.params.id)
+    const permissionCode = req.params.code
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        await tursoDb.execute({
+          sql: 'DELETE FROM user_permissions WHERE user_id = ? AND permission_code = ?',
+          args: [targetId, permissionCode]
+        })
+        return res.json({ success: true })
+      } catch (err) {
+        return res.status(500).json({ error: err.message })
+      }
+    }
+
+    try {
+      db.prepare('DELETE FROM user_permissions WHERE user_id = ? AND permission_code = ?').run(targetId, permissionCode)
+      res.json({ success: true })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
   })
 
   return router

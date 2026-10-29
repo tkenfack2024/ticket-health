@@ -31,8 +31,6 @@ export function useSystemNotifications(user) {
               nativeNotif.close()
             }
           })
-
-          try { await api.patch('/api/notifications/read-all', {}) } catch (e) {}
         }
         
         lastCheckRef.current = new Date().toISOString()

@@ -48,12 +48,21 @@ export default function AdminPermissions() {
 
   useEffect(() => { loadData() }, [])
 
+  // ==================== ACTIONS UTILISATEURS ====================
   const handleToggleUserPerm = async (userId, code, hasIt) => {
     setUpdating(`${userId}-${code}`)
     try {
       if (hasIt) await api.adminRevokePermission(userId, code)
       else await api.adminGrantPermission(userId, code)
-      await loadData()
+      
+      // Mise à jour locale pour une réaction instantanée
+      setUsers(prev => prev.map(u => {
+        if (u.id !== userId) return u
+        const newPerms = hasIt 
+          ? (u.permissions || []).filter(p => p !== code)
+          : [...(u.permissions || []), code]
+        return { ...u, permissions: newPerms }
+      }))
     } catch (err) {
       alert(err.message)
     } finally {
@@ -61,22 +70,49 @@ export default function AdminPermissions() {
     }
   }
 
+  // ==================== ACTIONS RÔLES ====================
   const handleSelectRole = async (role) => {
     setSelectedRole(role)
-    const perms = await api.adminGetRolePermissions(role.id)
-    setRolePermissions(perms)
+    setRolePermissions([]) // On vide avant de charger
+    try {
+      const perms = await api.adminGetRolePermissions(role.id)
+      setRolePermissions(perms)
+    } catch (err) {
+      console.error('Erreur chargement permissions rôle:', err)
+    }
   }
 
   const handleToggleRolePerm = async (code, hasIt) => {
     if (!selectedRole) return
+    
     try {
-      if (hasIt) await api.adminRemoveRolePermission(selectedRole.id, code)
-      else await api.adminAddRolePermission(selectedRole.id, code)
-      const perms = await api.adminGetRolePermissions(selectedRole.id)
-      setRolePermissions(perms)
-      loadData()
+      // 1. On tente l'ajout ou la suppression
+      if (hasIt) {
+        await api.adminRemoveRolePermission(selectedRole.id, code)
+      } else {
+        await api.adminAddRolePermission(selectedRole.id, code)
+      }
     } catch (err) {
-      alert(err.message)
+      // 2. Si le backend dit "déjà accordée" (erreur 400), on ignore pour forcer la synchro
+      if (!err.message.includes('déjà accordée')) {
+        alert(err.message)
+        return
+      }
+    }
+
+    // 3. Quoi qu'il arrive, on recharge l'état réel depuis le serveur
+    try {
+      const freshPerms = await api.adminGetRolePermissions(selectedRole.id)
+      setRolePermissions(freshPerms)
+      
+      const freshRoles = await api.adminGetRoles()
+      setRoles(freshRoles)
+      
+      const updatedSelected = freshRoles.find(r => r.id === selectedRole.id)
+      if (updatedSelected) setSelectedRole(updatedSelected)
+      
+    } catch (e) {
+      console.error('Erreur synchro:', e)
     }
   }
 
@@ -170,7 +206,7 @@ export default function AdminPermissions() {
                       </div>
                     </td>
                     {permissions.map((perm) => {
-                      const hasIt = user.permissions.includes(perm.code)
+                      const hasIt = (user.permissions || []).includes(perm.code)
                       const isUpdating = updating === `${user.id}-${perm.code}`
                       const isAdmin = user.isAdmin
                       return (

@@ -15,8 +15,10 @@ const TENANTS = [
 // Calcule la route de destination selon le rôle ET les permissions granulaires
 function getTargetPath(user, redirectTo) {
   const hasAnyPermission = Array.isArray(user.permissions) && user.permissions.length > 0
+  const hasCustomRole = !!user.custom_role // <-- AJOUT ICI
+  
   const canAccessBackOffice =
-    user.role === 'admin' || user.role === 'technicien' || hasAnyPermission
+    user.role === 'admin' || user.role === 'technicien' || hasCustomRole || hasAnyPermission
 
   if (canAccessBackOffice) {
     return redirectTo && redirectTo !== '/' ? redirectTo : '/'

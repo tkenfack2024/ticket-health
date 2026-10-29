@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Pill, Microscope, CheckCircle, Clock, Upload, X } from 'lucide-react'
+import { Pill, Microscope, CheckCircle, Clock, Upload, X, Loader2 } from 'lucide-react'
 import { api } from '../../api'
+import { useAuth } from '../../context/AuthContext'
 
 export default function AdminMedicalFollowUp() {
+  const { hasPermission } = useAuth()
   const [prescriptions, setPrescriptions] = useState([])
   const [exams, setExams] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('prescriptions')
   const [selectedExam, setSelectedExam] = useState(null) 
-  const [file, setFile] = useState(null)
 
   useEffect(() => { loadData() }, [])
 
@@ -77,9 +78,11 @@ export default function AdminMedicalFollowUp() {
                   <h3 className="font-bold text-slate-800 dark:text-slate-100">{p.last_name} {p.first_name} <span className="text-xs font-mono text-slate-400">({p.patient_code})</span></h3>
                   <p className="text-sm text-blue-600 font-medium mt-1">💊 {p.medication} - {p.dosage} ({p.duration})</p>
                 </div>
-                <button onClick={() => handleFinishPrescription(p.id)} className="flex items-center gap-2 bg-green-50 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-600 hover:text-white transition-colors">
-                  <CheckCircle size={16} /> Marquer administrée
-                </button>
+                {hasPermission('prescriptions.finish') && (
+                  <button onClick={() => handleFinishPrescription(p.id)} className="flex items-center gap-2 bg-green-50 text-green-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-600 hover:text-white transition-colors">
+                    <CheckCircle size={16} /> Marquer administrée
+                  </button>
+                )}
               </div>
             ))
           )}
@@ -97,21 +100,21 @@ export default function AdminMedicalFollowUp() {
                   <h3 className="font-bold text-slate-800 dark:text-slate-100">{e.last_name} {e.first_name} <span className="text-xs font-mono text-slate-400">({e.patient_code})</span></h3>
                   <p className="text-sm text-purple-600 font-medium mt-1">🔬 {e.exam_type}</p>
                 </div>
-                
-                {/* BOUTON MODIFIÉ */}
-                <button 
-                  onClick={() => setSelectedExam(e)}
-                  className="flex items-center gap-2 bg-purple-50 text-purple-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-600 hover:text-white transition-colors"
-                >
-                  <Upload size={16} /> Uploader résultat
-                </button>
+                {hasPermission('exams.update') && (
+                  <button 
+                    onClick={() => setSelectedExam(e)}
+                    className="flex items-center gap-2 bg-purple-50 text-purple-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-600 hover:text-white transition-colors"
+                  >
+                    <Upload size={16} /> Uploader résultat
+                  </button>
+                )}
               </div>
             ))
           )}
         </div>
       )}
 
-      {/* MODALE AJOUTÉE ICI */}
+      {/* MODALE RÉSULTAT EXAMEN */}
       {selectedExam && (
         <ExamResultModal
           exam={selectedExam}
@@ -127,10 +130,10 @@ export default function AdminMedicalFollowUp() {
 function ExamResultModal({ exam, onClose, onSuccess }) {
   const [status, setStatus] = useState('Résultat disponible')
   const [resultNotes, setResultNotes] = useState('')
-  const [file, setFile] = useState(null) // <-- C'EST CETTE LIGNE QUI MANQUE
+  const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
 
-    const handleSubmit = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     try {
@@ -145,29 +148,31 @@ function ExamResultModal({ exam, onClose, onSuccess }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <div className="bg-white dark:bg-slate-800 rounded-xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700 my-8">
+        
+        {/* Header de la modale */}
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-bold text-slate-800 dark:text-slate-100">Résultat de l'examen</h3>
-
-	                   <div>
-            <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Fichier (PDF, JPG - Max 5Mo)</label>
-            <input 
-              type="file" 
-              onChange={e => setFile(e.target.files[0])} // <-- C'est ici qu'on remplit la variable file
-              className="input-dark file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
-            />
-          </div>
-
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
         </div>
         
-        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4 bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
           Patient : <strong>{exam.last_name} {exam.first_name}</strong><br/>
           Examen : <strong>{exam.exam_type}</strong>
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Champ Fichier (maintenant bien placé) */}
+          <div>
+            <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Fichier (PDF, JPG - Max 5Mo)</label>
+            <input 
+              type="file" 
+              onChange={e => setFile(e.target.files[0])}
+              className="input-dark file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+            />
+          </div>
+
           <div>
             <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Statut</label>
             <select value={status} onChange={e => setStatus(e.target.value)} className="input-dark">
@@ -188,7 +193,8 @@ function ExamResultModal({ exam, onClose, onSuccess }) {
           </div>
 
           <div className="flex gap-2 pt-2">
-            <button type="submit" disabled={loading} className="flex-1 bg-purple-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-purple-700">
+            <button type="submit" disabled={loading} className="flex-1 bg-purple-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center justify-center gap-2">
+              {loading && <Loader2 size={16} className="animate-spin" />}
               {loading ? 'Enregistrement...' : 'Enregistrer le résultat'}
             </button>
             <button type="button" onClick={onClose} className="flex-1 border border-slate-300 text-slate-600 py-2 rounded-lg text-sm">Annuler</button>

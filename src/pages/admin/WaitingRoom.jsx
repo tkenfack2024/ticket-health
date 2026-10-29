@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { Clock, Play } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../api'
+import { useAuth } from '../../context/AuthContext'
 
 export default function AdminWaitingRoom() {
+  const { hasPermission } = useAuth()
   const [visits, setVisits] = useState([])
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
@@ -61,13 +63,15 @@ export default function AdminWaitingRoom() {
                   </div>
                 </div>
                 
-                {/* BOUTON QUI APPELLE LA NOUVELLE FONCTION */}
-                <button 
-                  onClick={() => handleStart(v.id, v.patient_id)} 
-                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors"
-                >
-                  <Play size={16} /> Prendre en charge
-                </button>
+                {/* BOUTON CONDITIONNÉ PAR LA PERMISSION */}
+                {hasPermission('visits.start') && (
+                  <button 
+                    onClick={() => handleStart(v.id, v.patient_id)} 
+                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                  >
+                    <Play size={16} /> Prendre en charge
+                  </button>
+                )}
               </div>
             ))
           )}

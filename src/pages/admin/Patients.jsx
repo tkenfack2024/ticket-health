@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { UserPlus, Search, User, Phone, MapPin, Droplet, Activity, Edit2, FileText, Clock, Pill } from 'lucide-react'
 import { api } from '../../api'
+import { useAuth } from '../../context/AuthContext'
 
 // ✅ IMPORT DES COMPOSANTS POUR LES AUTRES ONGLETS
 import AdminWaitingRoom from './WaitingRoom'
@@ -68,6 +69,7 @@ export default function AdminDpi() {
 // ==========================================
 function PatientsTab() {
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()  
   const [patients, setPatients] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -125,9 +127,11 @@ function PatientsTab() {
           </h2>
           <p className="text-slate-500 text-sm mt-1">{total} patient(s) enregistré(s)</p>
         </div>
-        <button onClick={() => { setEditItem(null); setShowModal(true) }} className="flex items-center gap-2 bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700 text-sm font-medium">
-          <UserPlus size={16} /> Nouveau Patient
-        </button>
+        {hasPermission('patients.create') && (
+          <button onClick={() => { setEditItem(null); setShowModal(true) }} className="flex items-center gap-2 bg-rose-600 text-white px-4 py-2 rounded-lg hover:bg-rose-700 text-sm font-medium">
+            <UserPlus size={16} /> Nouveau Patient
+          </button>
+        )}
       </div>
 
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 mb-6">
@@ -158,9 +162,11 @@ function PatientsTab() {
                         <Droplet size={12} /> {p.blood_type}
                       </span>
                     )}
-                    <button onClick={() => { setEditItem(p); setShowModal(true) }} className="p-1 text-slate-400 hover:text-blue-600" title="Modifier">
-                      <Edit2 size={16} />
-                    </button>
+                    {hasPermission('patients.edit') && (
+                      <button onClick={() => { setEditItem(p); setShowModal(true) }} className="p-1 text-slate-400 hover:text-blue-600" title="Modifier">
+                        <Edit2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
                 
@@ -171,18 +177,22 @@ function PatientsTab() {
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 dark:border-slate-700 space-y-2">
-                  <button 
-                    onClick={() => navigate(`/admin/patients/${p.id}/records`)}
-                    className="w-full bg-slate-50 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
-                  >
-                    <FileText size={14} /> Voir le dossier médical
-                  </button>
-                  <button 
-                    onClick={() => handleSendToDoctor(p.id)}
-                    className="w-full bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white py-2 rounded-lg text-xs font-bold transition-colors"
-                  >
-                    Envoyer en consultation
-                  </button>
+                  {hasPermission('records.list') && (
+                    <button 
+                      onClick={() => navigate(`/admin/patients/${p.id}/records`)}
+                      className="w-full bg-slate-50 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 py-2 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                    >
+                      <FileText size={14} /> Voir le dossier médical
+                    </button>
+                  )}
+                  {hasPermission('visits.create') && (
+                    <button 
+                      onClick={() => handleSendToDoctor(p.id)}
+                      className="w-full bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white py-2 rounded-lg text-xs font-bold transition-colors"
+                    >
+                      Envoyer en consultation
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -226,10 +236,12 @@ function PatientsTab() {
     </div>
   )
 }
+
 // ==========================================
-// MODALE PATIENT (INCHANGÉE)
+// MODALE PATIENT
 // ==========================================
 function PatientModal({ item, onClose, onSuccess }) {
+  const { hasPermission } = useAuth()
   const [form, setForm] = useState({
     first_name: item?.first_name || '', 
     last_name: item?.last_name || '', 
@@ -323,7 +335,7 @@ function PatientModal({ item, onClose, onSuccess }) {
           </div>
 
           <div className="flex gap-2 pt-2">
-            {item && (
+            {item && hasPermission('patients.delete') && (
               <button
                 type="button"
                 onClick={async () => {
