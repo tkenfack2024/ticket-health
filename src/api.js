@@ -693,4 +693,22 @@ adminGetAssets: (params = {}) => {
     method: 'POST',
   }),
 
+  // ============ BANNIÈRES SYSTÈME ============
+  getActiveBanners: () => request('/api/banners/active'),
+  getAllBanners: () => request('/api/banners'),
+  createBanner: (data) => request('/api/banners', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  updateBanner: (id, data) => request(`/api/banners/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  toggleBanner: (id) => request(`/api/banners/${id}/toggle`, {
+    method: 'POST',
+  }),
+  deleteBanner: (id) => request(`/api/banners/${id}`, {
+    method: 'DELETE',
+  }),
+
 }

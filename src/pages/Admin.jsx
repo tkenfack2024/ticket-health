@@ -1,6 +1,6 @@
 import { useState } from 'react'
 // ✅ AJOUT DE L'ICÔNE DATABASE ICI
-import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield, FileText, Network, Bug, ShoppingBag, GitBranch, ShieldAlert, Building2, BarChart3, Database } from 'lucide-react'
+import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield, FileText, Network, Bug, ShoppingBag, GitBranch, ShieldAlert, Building2, BarChart3, Database, Megaphone } from 'lucide-react'
 
 import AdminUsers from './admin/Users'
 import AdminModules from './admin/Modules'
@@ -20,6 +20,7 @@ import AdminCapacity from './admin/Capacity'
 
 // ✅ AJOUT DE L'IMPORT DU COMPOSANT BACKUP ICI
 import AdminBackup from './admin/Backup'
+import AdminBanners from './admin/Banners'
 import AdminPatientsImportExport from './admin/PatientsImportExport'
 
 const TABS = [
@@ -40,6 +41,7 @@ const TABS = [
   { id: 'capacity', label: 'Capacité & Perf', icon: BarChart3 },
   { id: 'backups', label: 'Backups', icon: Database },
   { id: 'patients-import-export', label: 'Import/Export Patients', icon: Users },
+  { id: 'banners', label: 'Bannières', icon: Megaphone },
 ]
 
 export default function Admin() {
@@ -99,6 +101,7 @@ export default function Admin() {
           {activeTab === 'capacity' && <AdminCapacity />}
           {activeTab === 'backups' && <AdminBackup />}
 	  {activeTab === 'patients-import-export' && <AdminPatientsImportExport />}
+	  {activeTab === 'banners' && <AdminBanners />}
         </div>
       </div>
     </div>

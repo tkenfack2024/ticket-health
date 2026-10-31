@@ -218,3 +218,87 @@ body {
 .dark .input-dark::placeholder {
   color: #94a3b8;
 }
+
+/* ==================== BANNIÈRES SYSTÈME (GLOW FLUORESCENT) ==================== */
+
+@keyframes banner-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px 2px var(--glow-color-soft), 0 0 20px 4px var(--glow-color-soft);
+  }
+  50% {
+    box-shadow: 0 0 16px 4px var(--glow-color), 0 0 40px 10px var(--glow-color-soft);
+  }
+}
+
+.banner-glow {
+  animation: banner-glow-pulse 2.2s ease-in-out infinite;
+  border: 1px solid var(--glow-color);
+  background: var(--glow-bg);
+  color: var(--glow-text);
+}
+
+/* Variante INFO (cyan) */
+.banner-variant-info {
+  --glow-color: #22d3ee;
+  --glow-color-soft: rgba(34, 211, 238, 0.35);
+  --glow-bg: rgba(34, 211, 238, 0.08);
+  --glow-text: #0e7490;
+}
+
+.dark .banner-variant-info {
+  --glow-text: #67e8f9;
+  --glow-bg: rgba(34, 211, 238, 0.12);
+}
+
+/* Variante SUCCESS (vert) */
+.banner-variant-success {
+  --glow-color: #4ade80;
+  --glow-color-soft: rgba(74, 222, 128, 0.35);
+  --glow-bg: rgba(74, 222, 128, 0.08);
+  --glow-text: #15803d;
+}
+
+.dark .banner-variant-success {
+  --glow-text: #86efac;
+  --glow-bg: rgba(74, 222, 128, 0.12);
+}
+
+/* Variante WARNING (ambre) */
+.banner-variant-warning {
+  --glow-color: #fbbf24;
+  --glow-color-soft: rgba(251, 191, 36, 0.35);
+  --glow-bg: rgba(251, 191, 36, 0.08);
+  --glow-text: #b45309;
+}
+
+.dark .banner-variant-warning {
+  --glow-text: #fcd34d;
+  --glow-bg: rgba(251, 191, 36, 0.12);
+}
+
+/* Variante DANGER (rouge) */
+.banner-variant-danger {
+  --glow-color: #f87171;
+  --glow-color-soft: rgba(248, 113, 113, 0.35);
+  --glow-bg: rgba(248, 113, 113, 0.08);
+  --glow-text: #b91c1c;
+}
+
+.dark .banner-variant-danger {
+  --glow-text: #fca5a5;
+  --glow-bg: rgba(248, 113, 113, 0.12);
+}
+
+/* Variante FLUO (magenta néon — encore plus fluorescent) */
+.banner-variant-fluo {
+  --glow-color: #e879f9;
+  --glow-color-soft: rgba(232, 121, 249, 0.45);
+  --glow-bg: rgba(232, 121, 249, 0.10);
+  --glow-text: #a21caf;
+  animation: banner-glow-pulse 1.4s ease-in-out infinite;
+}
+
+.dark .banner-variant-fluo {
+  --glow-text: #f0abfc;
+  --glow-bg: rgba(232, 121, 249, 0.15);
+}

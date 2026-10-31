@@ -13,7 +13,7 @@ import { createAdminRouter } from './admin.js'
 import { logStartup } from './version.js'
 import { initSlaTables, applySlaToTicket, pauseSla, resumeSla, createSlaRouter, computeSlaStatus, PAUSE_STATUS } from './sla.js'
 import { startSlaCron } from './sla-cron.js'
-import { initKnowledgeTables, createKnowledgeRouter } from './knowledge.js'
+import { initKnowledgeTables, createKnowledgeRouter, userHasPermission, userHasPermissionTurso } from './knowledge.js'
 import { initGdprTables, createGdprRouter } from './gdpr.js'
 import { createIncidentsRouter } from './incidents.js'
 import {
@@ -39,6 +39,7 @@ import { initStockTables, createStockRouter } from './stock.js'
 import { initBackupTables, createBackupRouter, startBackupCron } from './backup.js'
 import { evaluateDoraMajor } from './incidents.js'
 import { initNotificationsTables, createNotification } from './notifications-db.js'
+import { initBannerTables, createBannerRouter } from './banners.js'
 
 // ✅ IMPORTS UNIQUES POUR TURSO
 import { createClient } from '@libsql/client'
@@ -325,6 +326,7 @@ initResourceTables(db)
 initPatientTables(db)
 initStockTables(db)
 initBackupTables(db)
+initBannerTables(db)
 
 // ==================== SEED : Permissions ====================
 
@@ -422,6 +424,7 @@ app.use('/api/resources', createResourceRouter(db, logAction))
 app.use('/api/patients', createPatientRouter(db, logAction))
 app.use('/api/stock', createStockRouter(db, logAction))
 app.use('/api/admin/backups', createBackupRouter(db, logAction))
+app.use('/api/banners', createBannerRouter(db, logAction))
 
 initCatalogTables(db)
 initChangeTables(db)
@@ -817,6 +820,7 @@ app.get('/api/tickets', authRequired, async (req, res) => {
   const limitNum = parseInt(limit)
   const offsetNum = parseInt(offset)
 
+  // --- MODE TURSO ---
   if (tenantId) {
     const tenant = TENANTS[tenantId]
     if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
@@ -832,13 +836,11 @@ app.get('/api/tickets', authRequired, async (req, res) => {
         whereClause += ' AND t.archived = 0'
       }
 
-      // Filtrage selon le rôle
-      if (req.user.role === 'admin') {
-        // Admin voit tout
-      } else if (req.user.role === 'technicien') {
-        whereClause += ` AND (t.assignee = ? OR t.created_by = ?)`
-        args.push(req.user.email, req.user.id)
-      } else {
+      // ✅ Vérification de la permission tickets.list
+      const canViewAll = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'tickets.list')
+      
+      if (!canViewAll) {
+        // Si l'utilisateur n'a pas la permission, il ne voit que SES tickets
         whereClause += ` AND (t.created_by = ? OR t.assignee = ?)`
         args.push(req.user.id, req.user.email)
       }
@@ -874,8 +876,8 @@ app.get('/api/tickets', authRequired, async (req, res) => {
       }
       return res.json({ data: tickets, total })
     } catch (err) {
-      console.error('Erreur Turso GET tickets:', err)
-      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+        console.error('Erreur Turso GET tickets:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
     }
   }
 
@@ -889,12 +891,10 @@ app.get('/api/tickets', authRequired, async (req, res) => {
     whereClause += ' AND t.archived = 0'
   }
 
-  if (req.user.role === 'admin') {
-    // Admin voit tout
-  } else if (req.user.role === 'technicien') {
-    whereClause += ` AND (t.assignee = ? OR t.created_by = ?)`
-    params.push(req.user.email, req.user.id)
-  } else {
+  // ✅ Vérification de la permission tickets.list
+  const canViewAll = userHasPermission(db, req.user.id, req.user.role, 'tickets.list')
+
+  if (!canViewAll) {
     whereClause += ` AND (t.created_by = ? OR t.assignee = ?)`
     params.push(req.user.id, req.user.email)
   }
@@ -1002,6 +1002,11 @@ app.post('/api/tickets', authRequired, async (req, res) => {
     const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
     try {
+      // ✅ VÉRIFICATION DE LA PERMISSION tickets.create
+      if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'tickets.create')) {
+        return res.status(403).json({ error: 'Permission tickets.create requise' })
+      }
+
       const result = await tursoDb.execute({
         sql: `INSERT INTO tickets (title, category, priority, description, created_by, creator, asset_id)
               VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -1053,6 +1058,11 @@ app.post('/api/tickets', authRequired, async (req, res) => {
   }
 
   // --- MODE SQLITE ---
+  // ✅ VÉRIFICATION DE LA PERMISSION tickets.create
+  if (!userHasPermission(db, req.user.id, req.user.role, 'tickets.create')) {
+    return res.status(403).json({ error: 'Permission tickets.create requise' })
+  }
+
   if (asset_id) {
     const asset = db.prepare('SELECT id FROM assets WHERE id = ?').get(asset_id)
     if (!asset) return res.status(400).json({ error: 'Asset introuvable' })
@@ -1083,48 +1093,54 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
   const targetId = parseInt(req.params.id)
   const { tenantId } = req.user
 
-  if (assignee !== undefined && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Seuls les admins peuvent assigner un ticket' })
-  }
   if (incident_type && !['standard', 'security', 'major'].includes(incident_type)) {
     return res.status(400).json({ error: 'Type d\'incident invalide' })
   }
-  if (is_dora_major === true && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Seuls les admins peuvent classifier un incident DORA majeur' })
-  }
 
-    // --- MODE TURSO ---
+  // --- MODE TURSO ---
   if (tenantId) {
     const tenant = TENANTS[tenantId]
     if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
     const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
-    // 1. 🛡️ SÉCURITÉ : Recalculer is_dora_major côté serveur
-    let finalIsDoraMajor = undefined
-    if (dora_criteria !== undefined) {
-      try {
-        const parsedCriteria = typeof dora_criteria === 'string' ? JSON.parse(dora_criteria) : dora_criteria
-        finalIsDoraMajor = evaluateDoraMajor(parsedCriteria)
-      } catch (e) {
-        finalIsDoraMajor = false
-      }
-    }
-
-    // 2. 🛡️ COHÉRENCE : Si c'est un DORA majeur, on force le type d'incident
-    let finalIncidentType = incident_type
-    if (finalIsDoraMajor === true) {
-      finalIncidentType = 'major'
-    } else if (finalIsDoraMajor === false) {
-      finalIncidentType = 'standard'
-    }
-
     try {
+      // ✅ Vérification des permissions granulaires
+      const canEdit = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'tickets.edit')
+      const canAssign = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'tickets.assign')
+      const canStatus = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'tickets.status')
+      const canClassify = await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'tickets.classify')
+
+      if (assignee !== undefined && !canAssign) {
+        return res.status(403).json({ error: 'Permission tickets.assign requise' })
+      }
+      if (status !== undefined && !canStatus) {
+        return res.status(403).json({ error: 'Permission tickets.status requise' })
+      }
+      if ((incident_type !== undefined || is_dora_major !== undefined) && !canClassify) {
+        return res.status(403).json({ error: 'Permission tickets.classify requise' })
+      }
+
       const checkResult = await tursoDb.execute({ sql: 'SELECT * FROM tickets WHERE id = ?', args: [targetId] })
       const ticket = checkResult.rows[0]
       if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
-      const previousStatus = ticket.status
-      const previousAssignee = ticket.assignee
+      // 🛡️ SÉCURITÉ : Recalculer is_dora_major côté serveur
+      let finalIsDoraMajor = undefined
+      if (dora_criteria !== undefined) {
+        try {
+          const parsedCriteria = typeof dora_criteria === 'string' ? JSON.parse(dora_criteria) : dora_criteria
+          finalIsDoraMajor = evaluateDoraMajor(parsedCriteria)
+        } catch (e) {
+          finalIsDoraMajor = false
+        }
+      }
+
+      let finalIncidentType = incident_type
+      if (finalIsDoraMajor === true) {
+        finalIncidentType = 'major'
+      } else if (finalIsDoraMajor === false) {
+        finalIncidentType = 'standard'
+      }
 
       await tursoDb.execute({
         sql: `
@@ -1172,6 +1188,21 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
   }
 
   // --- MODE SQLITE ---
+  const canEdit = userHasPermission(db, req.user.id, req.user.role, 'tickets.edit')
+  const canAssign = userHasPermission(db, req.user.id, req.user.role, 'tickets.assign')
+  const canStatus = userHasPermission(db, req.user.id, req.user.role, 'tickets.status')
+  const canClassify = userHasPermission(db, req.user.id, req.user.role, 'tickets.classify')
+
+  if (assignee !== undefined && !canAssign) {
+    return res.status(403).json({ error: 'Permission tickets.assign requise' })
+  }
+  if (status !== undefined && !canStatus) {
+    return res.status(403).json({ error: 'Permission tickets.status requise' })
+  }
+  if ((incident_type !== undefined || is_dora_major !== undefined) && !canClassify) {
+    return res.status(403).json({ error: 'Permission tickets.classify requise' })
+  }
+
   const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(targetId)
   if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
@@ -1183,9 +1214,6 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
   const previousStatus = ticket.status
   const previousAssignee = ticket.assignee
 
-      
-
-    // 🛡️ SÉCURITÉ : Recalculer is_dora_major côté serveur (SQLite)
   let finalIsDoraMajorSqlite = undefined
   if (dora_criteria !== undefined) {
     try {
@@ -1196,7 +1224,6 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
     }
   }
 
-  // 🛡️ COHÉRENCE : Si c'est un DORA majeur, on force le type d'incident
   let finalIncidentTypeSqlite = incident_type
   if (finalIsDoraMajorSqlite === true) {
     finalIncidentTypeSqlite = 'major'
@@ -1224,7 +1251,7 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
     targetId
   )
 
-    if (status && status !== previousStatus) {
+  if (status && status !== previousStatus) {
     if (status === PAUSE_STATUS) pauseSla(db, targetId)
     else if (previousStatus === PAUSE_STATUS) resumeSla(db, targetId)
     if (status === 'Résolu') {
@@ -1258,12 +1285,18 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
 app.post('/api/tickets/:id/archive', authRequired, adminOnly, async (req, res) => {
   const { tenantId } = req.user
 
+  // --- MODE TURSO ---
   if (tenantId) {
     const tenant = TENANTS[tenantId]
     if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
     const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
     try {
+      // ✅ Vérification de la permission tickets.archive
+      if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'tickets.archive')) {
+        return res.status(403).json({ error: 'Permission tickets.archive requise' })
+      }
+
       const checkResult = await tursoDb.execute({ sql: 'SELECT id, title FROM tickets WHERE id = ?', args: [req.params.id] })
       const ticket = checkResult.rows[0]
       if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
@@ -1281,6 +1314,11 @@ app.post('/api/tickets/:id/archive', authRequired, adminOnly, async (req, res) =
   }
 
   // --- MODE SQLITE ---
+  // ✅ Vérification de la permission tickets.archive
+  if (!userHasPermission(db, req.user.id, req.user.role, 'tickets.archive')) {
+    return res.status(403).json({ error: 'Permission tickets.archive requise' })
+  }
+
   const ticket = db.prepare('SELECT id, title FROM tickets WHERE id = ?').get(req.params.id)
   if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 

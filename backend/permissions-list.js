@@ -146,6 +146,10 @@ export const PERMISSIONS_LIST = [
   { code: 'logs.bulk_review', label: 'Marquer plusieurs logs comme revus', module: 'logs' },
   { code: 'logs.review_stats', label: 'Voir les statistiques de revue', module: 'logs' },
 
+  // ==================== 11. NOTIFICATIONS (2) ====================
+  { code: 'notifications.banner.read', label: 'Voir les bannières système', module: 'notifications' },
+  { code: 'notifications.banner.manage', label: 'Gérer les bannières système', module: 'notifications' },
+
   // ==================== 10. STOCK, BÂTIMENTS, RESSOURCES, BACKUPS (19) ====================
   { code: 'stock.list', label: 'Voir le stock', module: 'stock' },
   { code: 'stock.create', label: 'Ajouter un article au stock', module: 'stock' },

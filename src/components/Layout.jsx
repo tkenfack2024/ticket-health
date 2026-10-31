@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
 import { useSystemNotifications } from '../hooks/useSystemNotifications'
+import NotificationBanner from './NotificationBanner'
 
 export default function Layout() {
   const { user, isAuthenticated, isAdmin, logout, hasPermission } = useAuth()
@@ -83,6 +84,7 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors">
+    <NotificationBanner />
       
       {isMobileMenuOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={closeMobileMenu} />
@@ -111,32 +113,44 @@ export default function Layout() {
             <NavLink to="/" end className={linkClass}>
               <LayoutDashboard size={18} /> Tableau de bord
             </NavLink>
-            <NavLink to="/tickets" end className={linkClass}>
-              <Ticket size={18} /> Tous les tickets
-            </NavLink>
-            <NavLink to="/tickets/new" className={linkClass}>
-              <PlusCircle size={18} /> Nouveau ticket
-            </NavLink>
-            <NavLink to="/knowledge" className={linkClass}>
-              <BookOpen size={18} /> Base de connaissances
-            </NavLink>
+            
+            {/* ✅ Le lien "Tous les tickets" n'apparaît que si on a la permission de les lister */}
+            {hasPermission('tickets.list') && (
+              <NavLink to="/tickets" end className={linkClass}>
+                <Ticket size={18} /> Tous les tickets
+              </NavLink>
+            )}
+
+            {/* ✅ Le lien "Nouveau ticket" n'apparaît que si on a la permission de créer */}
+            {hasPermission('tickets.create') && (
+              <NavLink to="/tickets/new" className={linkClass}>
+                <PlusCircle size={18} /> Nouveau ticket
+              </NavLink>
+            )}
+
+            {/* ✅ Le lien "Base de connaissances" n'apparaît que si on a la permission de la lire */}
+            {hasPermission('kb.read') && (
+              <NavLink to="/knowledge" className={linkClass}>
+                <BookOpen size={18} /> Base de connaissances
+              </NavLink>
+            )}
           </div>
 
           <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-1">
             
             {/* Menu Gestion DPI */}
-{(isAdmin || hasPermission('patients.list') || hasPermission('medical.read') || user?.custom_role) && (
-  <NavLink to="/admin/patients" className={linkClass}>
-    <Users size={18} /> Gestion DPI
-  </NavLink>
-)}
+            {(isAdmin || hasPermission('patients.list') || hasPermission('patients.medical_read') || user?.custom_role) && (
+              <NavLink to="/admin/patients" className={linkClass}>
+                <Users size={18} /> Gestion DPI
+              </NavLink>
+            )}
 
             {/* Menu Gestion des Ressources */}
-{(isAdmin || hasPermission('facility.tree') || hasPermission('resources.list') || user?.custom_role) && (
-  <NavLink to="/admin/ressources" className={linkClass}>
-    <Building size={18} /> Gestion des Ressources
-  </NavLink>
-)}
+            {(isAdmin || hasPermission('facility.tree') || hasPermission('resources.list') || user?.custom_role) && (
+              <NavLink to="/admin/ressources" className={linkClass}>
+                <Building size={18} /> Gestion des Ressources
+              </NavLink>
+            )}
 
             {/* Menu Administration (Lien direct) */}
             {isAdmin && (
@@ -146,7 +160,7 @@ export default function Layout() {
             )}
           </div>
 
-                    {isAdmin && (
+          {isAdmin && (
             <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-700">
               <NavLink to="/portal" className={linkClass}>
                 <ExternalLink size={18} /> Portail utilisateur
