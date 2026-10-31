@@ -1556,50 +1556,6 @@ const slaCompliance = totalEvaluated > 0
   }
 })
 
-// ==================== ROUTES : RÔLES DYNAMIQUES ====================
-
-app.get('/api/admin/roles', authRequired, adminOnly, (req, res) => {
-  const roles = db.prepare(`
-    SELECT r.*,
-    (SELECT COUNT(*) FROM users u WHERE u.custom_role = r.name) as user_count,
-    (SELECT COUNT(*) FROM role_permissions rp WHERE rp.role_id = r.id) as perm_count
-    FROM roles r ORDER BY r.name ASC
-  `).all()
-  res.json(roles)
-})
-
-app.post('/api/admin/roles', authRequired, adminOnly, (req, res) => {
-  const { name, description } = req.body
-  if (!name) return res.status(400).json({ error: 'Le nom est obligatoire' })
-  try {
-    const result = db.prepare('INSERT INTO roles (name, description) VALUES (?, ?)').run(name, description || null)
-    logAction(req.user.id, req.user.name, 'create', 'role', result.lastInsertRowid, `Rôle créé : ${name}`)
-    res.status(201).json({ success: true, id: result.lastInsertRowid })
-  } catch (err) {
-    if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce rôle existe déjà' })
-    res.status(500).json({ error: err.message })
-  }
-})
-
-app.get('/api/admin/roles/:id/permissions', authRequired, adminOnly, (req, res) => {
-  const perms = db.prepare('SELECT permission_code FROM role_permissions WHERE role_id = ?').all(req.params.id)
-  res.json(perms.map(p => p.permission_code))
-})
-
-app.post('/api/admin/roles/:id/permissions', authRequired, adminOnly, (req, res) => {
-  const { permission_code } = req.body
-  try {
-    db.prepare('INSERT INTO role_permissions (role_id, permission_code) VALUES (?, ?)').run(req.params.id, permission_code)
-    res.json({ success: true })
-  } catch (err) {
-    res.status(400).json({ error: 'Permission déjà accordée' })
-  }
-})
-
-app.delete('/api/admin/roles/:id/permissions/:code', authRequired, adminOnly, (req, res) => {
-  db.prepare('DELETE FROM role_permissions WHERE role_id = ? AND permission_code = ?').run(req.params.id, req.params.code)
-  res.json({ success: true })
-})
 
 // ==================== DÉMARRAGE ====================
 

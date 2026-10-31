@@ -1,9 +1,15 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Activity, Mail, Lock, User, Phone, Loader2, Moon, Sun } from 'lucide-react'
+import { Activity, Mail, Lock, User, Phone, Loader2, Moon, Sun, Building2 } from 'lucide-react'
 import { api } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+
+const TENANTS = [
+  { id: 'entreprise-test', name: 'Clinique Test' },
+  { id: 'entreprise-alpha', name: 'Hôpital Alpha' },
+  { id: 'entreprise-beta', name: 'Clinique Beta' },
+]
 
 export default function Register() {
   const navigate = useNavigate()
@@ -16,6 +22,7 @@ export default function Register() {
     phone: '',
     password: '',
     confirmPassword: '',
+    tenantId: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -24,6 +31,10 @@ export default function Register() {
     e.preventDefault()
     setError(null)
 
+    if (!form.tenantId) {
+      setError('Veuillez sélectionner votre entreprise')
+      return
+    }
     if (form.password !== form.confirmPassword) {
       setError('Les deux mots de passe ne correspondent pas')
       return
@@ -40,8 +51,9 @@ export default function Register() {
         email: form.email,
         phone: form.phone,
         password: form.password,
+        tenantId: form.tenantId,
       })
-      login(res.user, res.token)
+      await login(res.user, res.token)
       navigate('/portal', { replace: true })
     } catch (err) {
       setError(err.message)
@@ -76,6 +88,25 @@ export default function Register() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Sélection de l'entreprise */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Entreprise *</label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={18} />
+                <select
+                  required
+                  value={form.tenantId}
+                  onChange={(e) => setForm({ ...form, tenantId: e.target.value })}
+                  className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+                >
+                  <option value="">— Sélectionnez votre entreprise —</option>
+                  {TENANTS.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Nom complet *</label>
               <div className="relative">

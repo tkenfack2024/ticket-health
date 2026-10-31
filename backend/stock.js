@@ -4,6 +4,8 @@ import { authRequired } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { createNotification } from './notifications-db.js'
+import { sendNotificationEmail } from './email.js'
 
 // ==================== INITIALISATION ====================
 
@@ -167,6 +169,32 @@ export function createStockRouter(db, logAction) {
         const actionLabel = type === 'ENTREE' ? 'Entrée' : 'Sortie'
         logAction(req.user.id, req.user.name, 'stock_movement', 'stock_item', targetId, `${actionLabel} de ${qty} ${item.unit} pour ${item.name}`)
 
+        // ✅ NOUVEAU : Vérifier si le stock est bas
+        if (type === 'SORTIE' && newQuantity <= item.min_threshold) {
+          const title = `⚠️ Stock bas : ${item.name}`
+          const message = `Le stock de ${item.name} est passé à ${newQuantity} ${item.unit} (seuil d'alerte : ${item.min_threshold}).`
+
+          // 1. Notification in-app
+          await createNotification(db, { // On utilise la DB locale pour la notif
+            tenantId,
+            userId: req.user.id, // Ou l'admin
+            type: 'stock_low',
+            title,
+            message,
+            link: '/admin/ressources?tab=stock'
+          })
+
+          // 2. Envoyer un email aux admins
+          try {
+            const adminsResult = await tursoDb.execute("SELECT email FROM users WHERE role = 'admin' AND active = 1")
+            for (const admin of adminsResult.rows) {
+              if (admin.email) {
+                await sendNotificationEmail(admin.email, title, `<p>${message}</p>`)
+              }
+            }
+          } catch (e) { console.error('Erreur email stock bas:', e) }
+        }
+
         return res.json({ success: true, new_quantity: newQuantity })
       } catch (err) {
         console.error('Erreur Turso movement:', err)
@@ -193,6 +221,32 @@ export function createStockRouter(db, logAction) {
 
     const actionLabel = type === 'ENTREE' ? 'Entrée' : 'Sortie'
     logAction(req.user.id, req.user.name, 'stock_movement', 'stock_item', targetId, `${actionLabel} de ${qty} ${item.unit} pour ${item.name}`)
+
+    // ✅ NOUVEAU : Vérifier si le stock est bas
+    if (type === 'SORTIE' && newQuantity <= item.min_threshold) {
+      const title = `⚠️ Stock bas : ${item.name}`
+      const message = `Le stock de ${item.name} est passé à ${newQuantity} ${item.unit} (seuil d'alerte : ${item.min_threshold}).`
+
+      // 1. Notification in-app
+      await createNotification(db, {
+        tenantId: null,
+        userId: req.user.id,
+        type: 'stock_low',
+        title,
+        message,
+        link: '/admin/ressources?tab=stock'
+      })
+
+      // 2. Envoyer un email aux admins
+      try {
+        const admins = db.prepare("SELECT email FROM users WHERE role = 'admin' AND active = 1").all()
+        for (const admin of admins) {
+          if (admin.email) {
+            await sendNotificationEmail(admin.email, title, `<p>${message}</p>`)
+          }
+        }
+      } catch (e) { console.error('Erreur email stock bas:', e) }
+    }
 
     res.json({ success: true, new_quantity: newQuantity })
   })

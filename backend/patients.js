@@ -441,6 +441,91 @@ export function createPatientRouter(db, logAction) {
     }
   })
 
+  // ==================== PATCH /api/patients/:id ====================
+  router.patch('/:id', async (req, res) => {
+    const { first_name, last_name, dob, gender, phone, address, nir, blood_type, allergies } = req.body
+    const { tenantId } = req.user
+    const targetId = parseInt(req.params.id)
+
+    // Vérification de permission
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (tenant) {
+        const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'patients.edit')) {
+          return res.status(403).json({ error: 'Permission patients.edit requise' })
+        }
+      }
+    } else {
+      if (!userHasPermission(db, req.user.id, req.user.role, 'patients.edit')) {
+        return res.status(403).json({ error: 'Permission patients.edit requise' })
+      }
+    }
+
+    // Chiffrement conditionnel
+    const encNir = nir ? encrypt(nir) : null
+    const encAllergies = allergies ? encrypt(allergies) : null
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const check = await tursoDb.execute({ sql: 'SELECT * FROM patients WHERE id = ?', args: [targetId] })
+        if (check.rows.length === 0) return res.status(404).json({ error: 'Patient non trouvé' })
+
+        await tursoDb.execute({
+          sql: `
+            UPDATE patients SET
+              first_name = COALESCE(?, first_name),
+              last_name = COALESCE(?, last_name),
+              dob = COALESCE(?, dob),
+              gender = COALESCE(?, gender),
+              phone = COALESCE(?, phone),
+              address = COALESCE(?, address),
+              nir = COALESCE(?, nir),
+              blood_type = COALESCE(?, blood_type),
+              allergies = COALESCE(?, allergies)
+            WHERE id = ?
+          `,
+          args: [first_name?.trim() || null, last_name?.trim() || null, dob || null, gender || null,
+                 phone !== undefined ? phone : null, address !== undefined ? address : null,
+                 encNir, blood_type !== undefined ? blood_type : null, encAllergies, targetId]
+        })
+
+        logAction(req.user.id, req.user.name, 'update', 'patient', targetId, `Patient modifié : ${first_name} ${last_name}`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso PATCH patient:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    const existing = db.prepare('SELECT * FROM patients WHERE id = ?').get(targetId)
+    if (!existing) return res.status(404).json({ error: 'Patient non trouvé' })
+
+    db.prepare(`
+      UPDATE patients SET
+        first_name = COALESCE(?, first_name),
+        last_name = COALESCE(?, last_name),
+        dob = COALESCE(?, dob),
+        gender = COALESCE(?, gender),
+        phone = COALESCE(?, phone),
+        address = COALESCE(?, address),
+        nir = COALESCE(?, nir),
+        blood_type = COALESCE(?, blood_type),
+        allergies = COALESCE(?, allergies)
+      WHERE id = ?
+    `).run(first_name?.trim() || null, last_name?.trim() || null, dob || null, gender || null,
+           phone !== undefined ? phone : null, address !== undefined ? address : null,
+           encNir, blood_type !== undefined ? blood_type : null, encAllergies, targetId)
+
+    logAction(req.user.id, req.user.name, 'update', 'patient', targetId, `Patient modifié : ${first_name} ${last_name}`)
+    res.json({ success: true })
+  })
+
   // ==================== GET /api/patients/:id/records ====================
   router.get('/:id/records', async (req, res) => {
     const { tenantId } = req.user
