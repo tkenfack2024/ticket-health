@@ -1,18 +1,8 @@
 import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
-import { userHasPermission } from './knowledge.js'
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
-
-// Version simplifiée pour Turso (car userHasPermission est synchrone)
-async function userHasPermissionTurso(tursoDb, userId, role, code) {
-  if (role === 'admin') return true
-  const result = await tursoDb.execute({
-    sql: 'SELECT permission_code FROM user_permissions WHERE user_id = ? AND permission_code = ?',
-    args: [userId, code]
-  })
-  return result.rows.length > 0
-}
 
 export function initRiskTables(db) {
   db.exec(`
@@ -43,15 +33,14 @@ export function createRiskRouter(db, logAction) {
     const { status, category } = req.query
     const { tenantId } = req.user
 
-    // --- MODE TURSO ---
     if (tenantId) {
       const tenant = TENANTS[tenantId]
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
-        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'risk.view')) {
-          return res.status(403).json({ error: 'Permission risk.view requise' })
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'risks.list')) {
+          return res.status(403).json({ error: 'Permission risks.list requise' })
         }
 
         let query = 'SELECT * FROM risks WHERE 1=1'
@@ -69,8 +58,8 @@ export function createRiskRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
-    if (!userHasPermission(db, req.user.id, req.user.role, 'risk.view')) {
-      return res.status(403).json({ error: 'Permission risk.view requise' })
+    if (!userHasPermission(db, req.user.id, req.user.role, 'risks.list')) {
+      return res.status(403).json({ error: 'Permission risks.list requise' })
     }
 
     let query = 'SELECT * FROM risks WHERE 1=1'
@@ -92,15 +81,14 @@ export function createRiskRouter(db, logAction) {
     if (!probability || probability < 1 || probability > 5) return res.status(400).json({ error: 'Probabilité invalide (1-5)' })
     if (!impact || impact < 1 || impact > 5) return res.status(400).json({ error: 'Impact invalide (1-5)' })
 
-    // --- MODE TURSO ---
     if (tenantId) {
       const tenant = TENANTS[tenantId]
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
-        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'risk.create')) {
-          return res.status(403).json({ error: 'Permission risk.create requise' })
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'risks.create')) {
+          return res.status(403).json({ error: 'Permission risks.create requise' })
         }
 
         const result = await tursoDb.execute({
@@ -119,8 +107,8 @@ export function createRiskRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
-    if (!userHasPermission(db, req.user.id, req.user.role, 'risk.create')) {
-      return res.status(403).json({ error: 'Permission risk.create requise' })
+    if (!userHasPermission(db, req.user.id, req.user.role, 'risks.create')) {
+      return res.status(403).json({ error: 'Permission risks.create requise' })
     }
 
     const result = db.prepare(`
@@ -136,19 +124,19 @@ export function createRiskRouter(db, logAction) {
   router.patch('/:id', async (req, res) => {
     const { title, description, category, probability, impact, mitigation_plan, owner, status } = req.body
     const { tenantId } = req.user
+    const targetId = parseInt(req.params.id)
 
-    // --- MODE TURSO ---
     if (tenantId) {
       const tenant = TENANTS[tenantId]
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
-        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'risk.edit')) {
-          return res.status(403).json({ error: 'Permission risk.edit requise' })
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'risks.edit')) {
+          return res.status(403).json({ error: 'Permission risks.edit requise' })
         }
 
-        const checkResult = await tursoDb.execute({ sql: 'SELECT * FROM risks WHERE id = ?', args: [req.params.id] })
+        const checkResult = await tursoDb.execute({ sql: 'SELECT * FROM risks WHERE id = ?', args: [targetId] })
         if (checkResult.rows.length === 0) return res.status(404).json({ error: 'Risque non trouvé' })
 
         await tursoDb.execute({
@@ -165,10 +153,10 @@ export function createRiskRouter(db, logAction) {
               updated_at = datetime('now', 'localtime')
             WHERE id = ?
           `,
-          args: [title, description, category, probability, impact, mitigation_plan, owner, status, req.params.id]
+          args: [title, description, category, probability, impact, mitigation_plan, owner, status, targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'update', 'risk', req.params.id, `Risque modifié`)
+        logAction(req.user.id, req.user.name, 'update', 'risk', targetId, `Risque modifié`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso PATCH risk:', err)
@@ -177,11 +165,11 @@ export function createRiskRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
-    if (!userHasPermission(db, req.user.id, req.user.role, 'risk.edit')) {
-      return res.status(403).json({ error: 'Permission risk.edit requise' })
+    if (!userHasPermission(db, req.user.id, req.user.role, 'risks.edit')) {
+      return res.status(403).json({ error: 'Permission risks.edit requise' })
     }
 
-    const risk = db.prepare('SELECT * FROM risks WHERE id = ?').get(req.params.id)
+    const risk = db.prepare('SELECT * FROM risks WHERE id = ?').get(targetId)
     if (!risk) return res.status(404).json({ error: 'Risque non trouvé' })
 
     db.prepare(`
@@ -196,33 +184,33 @@ export function createRiskRouter(db, logAction) {
         status = COALESCE(?, status),
         updated_at = datetime('now', 'localtime')
       WHERE id = ?
-    `).run(title, description, category, probability, impact, mitigation_plan, owner, status, req.params.id)
+    `).run(title, description, category, probability, impact, mitigation_plan, owner, status, targetId)
 
-    logAction(req.user.id, req.user.name, 'update', 'risk', req.params.id, `Risque modifié`)
+    logAction(req.user.id, req.user.name, 'update', 'risk', targetId, `Risque modifié`)
     res.json({ success: true })
   })
 
   // ==================== DELETE /api/risks/:id ====================
   router.delete('/:id', async (req, res) => {
     const { tenantId } = req.user
+    const targetId = parseInt(req.params.id)
 
-    // --- MODE TURSO ---
     if (tenantId) {
       const tenant = TENANTS[tenantId]
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
-        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'risk.delete')) {
-          return res.status(403).json({ error: 'Permission risk.delete requise' })
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'risks.delete')) {
+          return res.status(403).json({ error: 'Permission risks.delete requise' })
         }
 
-        const checkResult = await tursoDb.execute({ sql: 'SELECT * FROM risks WHERE id = ?', args: [req.params.id] })
+        const checkResult = await tursoDb.execute({ sql: 'SELECT * FROM risks WHERE id = ?', args: [targetId] })
         const risk = checkResult.rows[0]
         if (!risk) return res.status(404).json({ error: 'Risque non trouvé' })
 
-        await tursoDb.execute({ sql: 'DELETE FROM risks WHERE id = ?', args: [req.params.id] })
-        logAction(req.user.id, req.user.name, 'delete', 'risk', req.params.id, `Risque supprimé : ${risk.title}`)
+        await tursoDb.execute({ sql: 'DELETE FROM risks WHERE id = ?', args: [targetId] })
+        logAction(req.user.id, req.user.name, 'delete', 'risk', targetId, `Risque supprimé : ${risk.title}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE risk:', err)
@@ -231,15 +219,15 @@ export function createRiskRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
-    if (!userHasPermission(db, req.user.id, req.user.role, 'risk.delete')) {
-      return res.status(403).json({ error: 'Permission risk.delete requise' })
+    if (!userHasPermission(db, req.user.id, req.user.role, 'risks.delete')) {
+      return res.status(403).json({ error: 'Permission risks.delete requise' })
     }
 
-    const risk = db.prepare('SELECT * FROM risks WHERE id = ?').get(req.params.id)
+    const risk = db.prepare('SELECT * FROM risks WHERE id = ?').get(targetId)
     if (!risk) return res.status(404).json({ error: 'Risque non trouvé' })
 
-    db.prepare('DELETE FROM risks WHERE id = ?').run(req.params.id)
-    logAction(req.user.id, req.user.name, 'delete', 'risk', req.params.id, `Risque supprimé : ${risk.title}`)
+    db.prepare('DELETE FROM risks WHERE id = ?').run(targetId)
+    logAction(req.user.id, req.user.name, 'delete', 'risk', targetId, `Risque supprimé : ${risk.title}`)
     res.json({ success: true })
   })
 

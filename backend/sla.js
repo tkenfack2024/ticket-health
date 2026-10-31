@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 
 // ==================== CONSTANTES ====================
 
@@ -153,6 +154,9 @@ export function createSlaRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'sla.list')) {
+          return res.status(403).json({ error: 'Permission sla.list requise' })
+        }
         const result = await tursoDb.execute('SELECT * FROM sla_policies ORDER BY resolution_minutes ASC')
         return res.json(result.rows)
       } catch (err) {
@@ -162,6 +166,9 @@ export function createSlaRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'sla.list')) {
+      return res.status(403).json({ error: 'Permission sla.list requise' })
+    }
     const policies = db.prepare('SELECT * FROM sla_policies ORDER BY resolution_minutes ASC').all()
     res.json(policies)
   })
@@ -182,6 +189,9 @@ export function createSlaRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'sla.edit')) {
+          return res.status(403).json({ error: 'Permission sla.edit requise' })
+        }
         const check = await tursoDb.execute({ sql: 'SELECT * FROM sla_policies WHERE id = ?', args: [targetId] })
         const policy = check.rows[0]
         if (!policy) return res.status(404).json({ error: 'Politique non trouvée' })
@@ -201,6 +211,9 @@ export function createSlaRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'sla.edit')) {
+      return res.status(403).json({ error: 'Permission sla.edit requise' })
+    }
     const policy = db.prepare('SELECT * FROM sla_policies WHERE id = ?').get(targetId)
     if (!policy) return res.status(404).json({ error: 'Politique non trouvée' })
 
@@ -228,6 +241,9 @@ export function createSlaRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'sla.list')) {
+          return res.status(403).json({ error: 'Permission sla.list requise' })
+        }
         const result = await tursoDb.execute('SELECT * FROM tickets WHERE archived = 0')
         const allTickets = result.rows
 
@@ -260,6 +276,9 @@ export function createSlaRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'sla.list')) {
+      return res.status(403).json({ error: 'Permission sla.list requise' })
+    }
     const allTickets = db.prepare(`SELECT * FROM tickets WHERE archived = 0`).all()
     let respected = 0, threatened = 0, exceeded = 0, paused = 0, noSla = 0
     const resolutionTimes = []
@@ -297,6 +316,9 @@ export function createSlaRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'sla.export')) {
+          return res.status(403).json({ error: 'Permission sla.export requise' })
+        }
         const result = await tursoDb.execute(`
           SELECT t.id, t.title, t.priority, t.status, t.created_at, t.sla_resolution_deadline, t.resolved_at, t.sla_paused_total_minutes, u.name as assignee_name
           FROM tickets t LEFT JOIN users u ON t.assignee = u.email
@@ -309,6 +331,9 @@ export function createSlaRouter(db, logAction) {
       }
     } else {
       // --- MODE SQLITE ---
+      if (!userHasPermission(db, req.user.id, req.user.role, 'sla.export')) {
+        return res.status(403).json({ error: 'Permission sla.export requise' })
+      }
       tickets = db.prepare(`
         SELECT t.id, t.title, t.priority, t.status, t.created_at, t.sla_resolution_deadline, t.resolved_at, t.sla_paused_total_minutes, u.name as assignee_name
         FROM tickets t LEFT JOIN users u ON t.assignee = u.email

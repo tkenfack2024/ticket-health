@@ -5,8 +5,8 @@ import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 
-// 📁 Dossier où seront stockés les backups
 const BACKUP_DIR = path.join(process.cwd(), 'backups')
 if (!fs.existsSync(BACKUP_DIR)) {
   fs.mkdirSync(BACKUP_DIR, { recursive: true })
@@ -190,14 +190,8 @@ export async function restoreBackup(db, backupId, user, logAction) {
   if (!fs.existsSync(backup.filepath)) throw new Error('Fichier de sauvegarde introuvable sur le disque')
   if (backup.status !== 'success') throw new Error('Impossible de restaurer une sauvegarde en échec')
 
-  // 🛡️ 1. Backup de sécurité (pre-restore)
-  await createBackup(db, { 
-    type: 'pre-restore', 
-    tenantId: backup.tenant_id, 
-    user 
-  })
+  await createBackup(db, { type: 'pre-restore', tenantId: backup.tenant_id, user })
 
-  // 2. Logique de restauration selon la cible
   if (!backup.tenant_id) {
     const pendingPath = path.join(process.cwd(), 'tickets.db.restore-pending')
     fs.copyFileSync(backup.filepath, pendingPath)
@@ -249,55 +243,195 @@ export function createBackupRouter(db, logAction) {
   const router = Router()
   router.use(authRequired, adminOnly)
 
-  router.get('/config', (req, res) => {
+  // GET /api/admin/backups/config
+  router.get('/config', async (req, res) => {
+    const { tenantId } = req.user
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.config')) {
+          return res.status(403).json({ error: 'Permission backups.config requise' })
+        }
+        return res.json(getBackupConfig(db))
+      } catch (err) {
+        return res.status(500).json({ error: 'Erreur de connexion' })
+      }
+    }
+
+    if (!userHasPermission(db, req.user.id, req.user.role, 'backups.config')) {
+      return res.status(403).json({ error: 'Permission backups.config requise' })
+    }
     res.json(getBackupConfig(db))
   })
 
-  router.patch('/config', (req, res) => {
-    try {
-      const config = updateBackupConfig(db, req.body)
-      logAction(req.user.id, req.user.name, 'update', 'backup_config', 1, `Interval: ${config.interval_hours}h, Actif: ${config.enabled}`)
-      res.json(config)
-    } catch (err) { res.status(500).json({ error: err.message }) }
+  // PATCH /api/admin/backups/config
+  router.patch('/config', async (req, res) => {
+    const { tenantId } = req.user
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.config')) {
+          return res.status(403).json({ error: 'Permission backups.config requise' })
+        }
+        const config = updateBackupConfig(db, req.body)
+        logAction(req.user.id, req.user.name, 'update', 'backup_config', 1, `Interval: ${config.interval_hours}h, Actif: ${config.enabled}`)
+        return res.json(config)
+      } catch (err) {
+        return res.status(500).json({ error: 'Erreur de connexion' })
+      }
+    }
+
+    if (!userHasPermission(db, req.user.id, req.user.role, 'backups.config')) {
+      return res.status(403).json({ error: 'Permission backups.config requise' })
+    }
+    const config = updateBackupConfig(db, req.body)
+    logAction(req.user.id, req.user.name, 'update', 'backup_config', 1, `Interval: ${config.interval_hours}h, Actif: ${config.enabled}`)
+    res.json(config)
   })
 
-  router.get('/', (req, res) => {
-    const tenantId = req.query.tenant_id || null
-    res.json(listBackups(db, tenantId))
+  // GET /api/admin/backups
+  router.get('/', async (req, res) => {
+    const { tenantId } = req.user
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.list')) {
+          return res.status(403).json({ error: 'Permission backups.list requise' })
+        }
+        return res.json(listBackups(db, req.query.tenant_id || null))
+      } catch (err) {
+        return res.status(500).json({ error: 'Erreur de connexion' })
+      }
+    }
+
+    if (!userHasPermission(db, req.user.id, req.user.role, 'backups.list')) {
+      return res.status(403).json({ error: 'Permission backups.list requise' })
+    }
+    res.json(listBackups(db, req.query.tenant_id || null))
   })
 
+  // POST /api/admin/backups
   router.post('/', async (req, res) => {
+    const { tenantId } = req.user
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.create')) {
+          return res.status(403).json({ error: 'Permission backups.create requise' })
+        }
+        const { tenant_id } = req.body
+        const result = await createBackup(db, { type: 'manual', tenantId: tenant_id || null, user: req.user })
+        logAction(req.user.id, req.user.name, 'create', 'backup', result.id, `Backup manuel : ${result.filename}`)
+        return res.status(201).json(result)
+      } catch (err) {
+        return res.status(500).json({ error: err.message })
+      }
+    }
+
+    if (!userHasPermission(db, req.user.id, req.user.role, 'backups.create')) {
+      return res.status(403).json({ error: 'Permission backups.create requise' })
+    }
     try {
       const { tenant_id } = req.body
       const result = await createBackup(db, { type: 'manual', tenantId: tenant_id || null, user: req.user })
       logAction(req.user.id, req.user.name, 'create', 'backup', result.id, `Backup manuel : ${result.filename}`)
       res.status(201).json(result)
-    } catch (err) { res.status(500).json({ error: err.message }) }
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
   })
 
-  router.delete('/:id', (req, res) => {
+  // DELETE /api/admin/backups/:id
+  router.delete('/:id', async (req, res) => {
+    const { tenantId } = req.user
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.delete')) {
+          return res.status(403).json({ error: 'Permission backups.delete requise' })
+        }
+        deleteBackup(db, req.params.id)
+        logAction(req.user.id, req.user.name, 'delete', 'backup', req.params.id, 'Backup supprimé')
+        return res.json({ success: true })
+      } catch (err) {
+        return res.status(500).json({ error: err.message })
+      }
+    }
+
+    if (!userHasPermission(db, req.user.id, req.user.role, 'backups.delete')) {
+      return res.status(403).json({ error: 'Permission backups.delete requise' })
+    }
     try {
       deleteBackup(db, req.params.id)
       logAction(req.user.id, req.user.name, 'delete', 'backup', req.params.id, 'Backup supprimé')
       res.json({ success: true })
-    } catch (err) { res.status(500).json({ error: err.message }) }
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
   })
 
-  router.get('/:id/download', (req, res) => {
-    const backup = db.prepare('SELECT * FROM backups WHERE id = ?').get(req.params.id)
-    if (!backup || !fs.existsSync(backup.filepath)) {
-      return res.status(404).json({ error: 'Fichier non trouvé' })
+  // GET /api/admin/backups/:id/download
+  router.get('/:id/download', async (req, res) => {
+    const { tenantId } = req.user
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.list')) {
+          return res.status(403).json({ error: 'Permission backups.list requise' })
+        }
+        const backup = db.prepare('SELECT * FROM backups WHERE id = ?').get(req.params.id)
+        if (!backup || !fs.existsSync(backup.filepath)) return res.status(404).json({ error: 'Fichier non trouvé' })
+        return res.download(backup.filepath, backup.filename)
+      } catch (err) {
+        return res.status(500).json({ error: 'Erreur de connexion' })
+      }
     }
+
+    if (!userHasPermission(db, req.user.id, req.user.role, 'backups.list')) {
+      return res.status(403).json({ error: 'Permission backups.list requise' })
+    }
+    const backup = db.prepare('SELECT * FROM backups WHERE id = ?').get(req.params.id)
+    if (!backup || !fs.existsSync(backup.filepath)) return res.status(404).json({ error: 'Fichier non trouvé' })
     res.download(backup.filepath, backup.filename)
   })
 
-  // ✅ LA ROUTE DE RESTAURATION EST MAINTENANT BIEN PLACÉE
+  // POST /api/admin/backups/:id/restore
   router.post('/:id/restore', async (req, res) => {
+    const { tenantId } = req.user
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.restore')) {
+          return res.status(403).json({ error: 'Permission backups.restore requise' })
+        }
+        const result = await restoreBackup(db, req.params.id, req.user, logAction)
+        return res.json(result)
+      } catch (err) {
+        return res.status(500).json({ error: err.message })
+      }
+    }
+
+    if (!userHasPermission(db, req.user.id, req.user.role, 'backups.restore')) {
+      return res.status(403).json({ error: 'Permission backups.restore requise' })
+    }
     try {
       const result = await restoreBackup(db, req.params.id, req.user, logAction)
       res.json(result)
     } catch (err) {
-      console.error('Erreur lors de la restauration:', err)
       res.status(500).json({ error: err.message })
     }
   })

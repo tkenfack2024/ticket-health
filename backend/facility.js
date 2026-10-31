@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 
 export function initFacilityTables(db) {
   db.exec(`
@@ -42,7 +43,6 @@ export function createFacilityRouter(db, logAction) {
   router.use(authRequired)
 
   // ==================== GET /api/facility/tree ====================
-  // Arbre complet des sites → étages → salles
   router.get('/tree', async (req, res) => {
     const { tenantId } = req.user
 
@@ -52,6 +52,10 @@ export function createFacilityRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'facility.tree')) {
+          return res.status(403).json({ error: 'Permission facility.tree requise' })
+        }
+
         const sitesResult = await tursoDb.execute('SELECT * FROM sites ORDER BY name ASC')
         const floorsResult = await tursoDb.execute('SELECT * FROM floors ORDER BY name ASC')
         const roomsResult = await tursoDb.execute('SELECT * FROM rooms ORDER BY name ASC')
@@ -74,6 +78,10 @@ export function createFacilityRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'facility.tree')) {
+      return res.status(403).json({ error: 'Permission facility.tree requise' })
+    }
+
     const sites = db.prepare('SELECT * FROM sites ORDER BY name ASC').all()
     const floors = db.prepare('SELECT * FROM floors ORDER BY name ASC').all()
     const rooms = db.prepare('SELECT * FROM rooms ORDER BY name ASC').all()
@@ -92,7 +100,7 @@ export function createFacilityRouter(db, logAction) {
   })
 
   // ==================== POST /api/facility/sites ====================
-  router.post('/sites', adminOnly, async (req, res) => {
+  router.post('/sites', async (req, res) => {
     const { name, address } = req.body
     const { tenantId } = req.user
 
@@ -104,6 +112,10 @@ export function createFacilityRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'facility.create')) {
+          return res.status(403).json({ error: 'Permission facility.create requise' })
+        }
+
         const result = await tursoDb.execute({
           sql: 'INSERT INTO sites (name, address) VALUES (?, ?)',
           args: [name.trim(), address || null]
@@ -118,13 +130,17 @@ export function createFacilityRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'facility.create')) {
+      return res.status(403).json({ error: 'Permission facility.create requise' })
+    }
+
     const result = db.prepare('INSERT INTO sites (name, address) VALUES (?, ?)').run(name.trim(), address || null)
     logAction(req.user.id, req.user.name, 'create', 'site', result.lastInsertRowid, `Site créé : ${name}`)
     res.status(201).json({ success: true, id: result.lastInsertRowid })
   })
 
   // ==================== POST /api/facility/floors ====================
-  router.post('/floors', adminOnly, async (req, res) => {
+  router.post('/floors', async (req, res) => {
     const { site_id, name } = req.body
     const { tenantId } = req.user
 
@@ -136,6 +152,10 @@ export function createFacilityRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'facility.create')) {
+          return res.status(403).json({ error: 'Permission facility.create requise' })
+        }
+
         const check = await tursoDb.execute({ sql: 'SELECT id FROM sites WHERE id = ?', args: [site_id] })
         if (check.rows.length === 0) return res.status(404).json({ error: 'Site non trouvé' })
 
@@ -153,6 +173,10 @@ export function createFacilityRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'facility.create')) {
+      return res.status(403).json({ error: 'Permission facility.create requise' })
+    }
+
     const site = db.prepare('SELECT id FROM sites WHERE id = ?').get(site_id)
     if (!site) return res.status(404).json({ error: 'Site non trouvé' })
 
@@ -162,7 +186,7 @@ export function createFacilityRouter(db, logAction) {
   })
 
   // ==================== POST /api/facility/rooms ====================
-  router.post('/rooms', adminOnly, async (req, res) => {
+  router.post('/rooms', async (req, res) => {
     const { floor_id, name, type, code, capacity } = req.body
     const { tenantId } = req.user
 
@@ -177,6 +201,10 @@ export function createFacilityRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'facility.create')) {
+          return res.status(403).json({ error: 'Permission facility.create requise' })
+        }
+
         const check = await tursoDb.execute({ sql: 'SELECT id FROM floors WHERE id = ?', args: [floor_id] })
         if (check.rows.length === 0) return res.status(404).json({ error: 'Étage non trouvé' })
 
@@ -194,6 +222,10 @@ export function createFacilityRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'facility.create')) {
+      return res.status(403).json({ error: 'Permission facility.create requise' })
+    }
+
     const floor = db.prepare('SELECT id FROM floors WHERE id = ?').get(floor_id)
     if (!floor) return res.status(404).json({ error: 'Étage non trouvé' })
 

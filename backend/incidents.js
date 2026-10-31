@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 
 // ==================== CRITÈRES DORA ====================
 
@@ -34,7 +35,24 @@ export function createIncidentsRouter(db, logAction) {
   router.use(authRequired, adminOnly)
 
   // ---- GET /api/incidents/criteria ----
-  router.get('/criteria', (req, res) => {
+  router.get('/criteria', async (req, res) => {
+    const { tenantId } = req.user
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'incidents.list')) {
+          return res.status(403).json({ error: 'Permission incidents.list requise' })
+        }
+        return res.json(DORA_CRITERIA)
+      } catch (err) {
+        return res.status(500).json({ error: 'Erreur de connexion' })
+      }
+    }
+    if (!userHasPermission(db, req.user.id, req.user.role, 'incidents.list')) {
+      return res.status(403).json({ error: 'Permission incidents.list requise' })
+    }
     res.json(DORA_CRITERIA)
   })
 
@@ -48,6 +66,9 @@ export function createIncidentsRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'incidents.list')) {
+          return res.status(403).json({ error: 'Permission incidents.list requise' })
+        }
         const result = await tursoDb.execute(`
           SELECT t.*, u.name as assigned_to_name
           FROM tickets t
@@ -67,6 +88,10 @@ export function createIncidentsRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'incidents.list')) {
+      return res.status(403).json({ error: 'Permission incidents.list requise' })
+    }
+
     const incidents = db.prepare(`
       SELECT t.*, u.name as assigned_to_name
       FROM tickets t
@@ -92,6 +117,9 @@ export function createIncidentsRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'incidents.list')) {
+          return res.status(403).json({ error: 'Permission incidents.list requise' })
+        }
         const totalResult = await tursoDb.execute('SELECT COUNT(*) as c FROM tickets WHERE archived = 0')
         const securityResult = await tursoDb.execute("SELECT COUNT(*) as c FROM tickets WHERE archived = 0 AND incident_type = 'security'")
         const majorResult = await tursoDb.execute('SELECT COUNT(*) as c FROM tickets WHERE archived = 0 AND is_dora_major = 1')
@@ -122,6 +150,9 @@ export function createIncidentsRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'incidents.list')) {
+      return res.status(403).json({ error: 'Permission incidents.list requise' })
+    }
     const total = db.prepare('SELECT COUNT(*) as c FROM tickets WHERE archived = 0').get().c
     const security = db.prepare("SELECT COUNT(*) as c FROM tickets WHERE archived = 0 AND incident_type = 'security'").get().c
     const major = db.prepare('SELECT COUNT(*) as c FROM tickets WHERE archived = 0 AND is_dora_major = 1').get().c
@@ -154,6 +185,9 @@ export function createIncidentsRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'incidents.list')) {
+          return res.status(403).json({ error: 'Permission incidents.list requise' })
+        }
         const result = await tursoDb.execute({
           sql: `
             SELECT t.*, u.name as assigned_to_name,
@@ -199,6 +233,9 @@ export function createIncidentsRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'incidents.list')) {
+      return res.status(403).json({ error: 'Permission incidents.list requise' })
+    }
     const ticket = db.prepare(`
       SELECT t.*, u.name as assigned_to_name,
              creator_user.name as creator_name, creator_user.email as creator_email

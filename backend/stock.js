@@ -3,6 +3,7 @@ import { Router } from 'express'
 import { authRequired } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 
 // ==================== INITIALISATION ====================
 
@@ -52,6 +53,10 @@ export function createStockRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'stock.list')) {
+          return res.status(403).json({ error: 'Permission stock.list requise' })
+        }
+
         const result = await tursoDb.execute('SELECT * FROM stock_items ORDER BY name ASC')
         return res.json(result.rows)
       } catch (err) {
@@ -61,6 +66,9 @@ export function createStockRouter(db, logAction) {
     }
 
     // MODE SQLITE
+    if (!userHasPermission(db, req.user.id, req.user.role, 'stock.list')) {
+      return res.status(403).json({ error: 'Permission stock.list requise' })
+    }
     const items = db.prepare('SELECT * FROM stock_items ORDER BY name ASC').all()
     res.json(items)
   })
@@ -81,6 +89,10 @@ export function createStockRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'stock.create')) {
+          return res.status(403).json({ error: 'Permission stock.create requise' })
+        }
+
         const result = await tursoDb.execute({
           sql: `INSERT INTO stock_items (name, category, unit, current_quantity, min_threshold)
                 VALUES (?, ?, ?, ?, ?)`,
@@ -98,6 +110,10 @@ export function createStockRouter(db, logAction) {
     }
 
     // MODE SQLITE
+    if (!userHasPermission(db, req.user.id, req.user.role, 'stock.create')) {
+      return res.status(403).json({ error: 'Permission stock.create requise' })
+    }
+
     const result = db.prepare(`
       INSERT INTO stock_items (name, category, unit, current_quantity, min_threshold)
       VALUES (?, ?, ?, ?, ?)
@@ -109,7 +125,6 @@ export function createStockRouter(db, logAction) {
   })
 
   // ---- POST /api/stock/:id/movement ----
-  // Ajouter ou retirer du stock
   router.post('/:id/movement', async (req, res) => {
     const targetId = parseInt(req.params.id)
     const { type, quantity, reason } = req.body
@@ -127,6 +142,10 @@ export function createStockRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'stock.movement')) {
+          return res.status(403).json({ error: 'Permission stock.movement requise' })
+        }
+
         const check = await tursoDb.execute({ sql: 'SELECT * FROM stock_items WHERE id = ?', args: [targetId] })
         const item = check.rows[0]
         if (!item) return res.status(404).json({ error: 'Article non trouvé' })
@@ -156,6 +175,10 @@ export function createStockRouter(db, logAction) {
     }
 
     // MODE SQLITE
+    if (!userHasPermission(db, req.user.id, req.user.role, 'stock.movement')) {
+      return res.status(403).json({ error: 'Permission stock.movement requise' })
+    }
+
     const item = db.prepare('SELECT * FROM stock_items WHERE id = ?').get(targetId)
     if (!item) return res.status(404).json({ error: 'Article non trouvé' })
 
@@ -184,6 +207,10 @@ export function createStockRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'stock.history')) {
+          return res.status(403).json({ error: 'Permission stock.history requise' })
+        }
+
         const result = await tursoDb.execute(`
           SELECT m.*, s.name as item_name, s.unit as item_unit
           FROM stock_movements m
@@ -199,6 +226,10 @@ export function createStockRouter(db, logAction) {
     }
 
     // MODE SQLITE
+    if (!userHasPermission(db, req.user.id, req.user.role, 'stock.history')) {
+      return res.status(403).json({ error: 'Permission stock.history requise' })
+    }
+
     const history = db.prepare(`
       SELECT m.*, s.name as item_name, s.unit as item_unit
       FROM stock_movements m

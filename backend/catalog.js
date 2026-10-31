@@ -1,6 +1,9 @@
 import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
 import { applySlaToTicket } from './sla.js'
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js' 
+import { createClient } from '@libsql/client'
+import { TENANTS } from './tenants.js'
 
 // ==================== INITIALISATION ====================
 
@@ -163,48 +166,149 @@ export function createCatalogRouter(db, logAction) {
   // ============ ROUTES PUBLIQUES (auth requise) ============
 
   // Liste des services actifs
-  router.get('/services', authRequired, (req, res) => {
-    const services = db.prepare(`
-      SELECT
-        id, name, description, category, icon, color,
-        sla_hours, requires_approval, approver_role, form_fields
-      FROM service_catalog
-      WHERE active = 1
-      ORDER BY category ASC, name ASC
-    `).all()
+    // Liste des services actifs
+  router.get('/services', authRequired, async (req, res) => {
+    const { tenantId } = req.user
 
-    // Parser form_fields
-    for (const s of services) {
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
       try {
-        s.form_fields = s.form_fields ? JSON.parse(s.form_fields) : []
-      } catch {
-        s.form_fields = []
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.read')) {
+          return res.status(403).json({ error: 'Permission catalog.read requise' })
+        }
+
+        const result = await tursoDb.execute(`
+          SELECT id, name, description, category, icon, color, sla_hours, requires_approval, approver_role, form_fields
+          FROM service_catalog WHERE active = 1 ORDER BY category ASC, name ASC
+        `)
+        const services = result.rows
+        for (const s of services) {
+          try { s.form_fields = s.form_fields ? JSON.parse(s.form_fields) : [] } catch { s.form_fields = [] }
+        }
+        return res.json(services)
+      } catch (err) {
+        console.error('Erreur Turso GET services:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
       }
     }
 
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.read')) {
+      return res.status(403).json({ error: 'Permission catalog.read requise' })
+    }
+
+    const services = db.prepare(`
+      SELECT id, name, description, category, icon, color, sla_hours, requires_approval, approver_role, form_fields
+      FROM service_catalog WHERE active = 1 ORDER BY category ASC, name ASC
+    `).all()
+
+    for (const s of services) {
+      try { s.form_fields = s.form_fields ? JSON.parse(s.form_fields) : [] } catch { s.form_fields = [] }
+    }
     res.json(services)
   })
 
-  // Détail d'un service
-  router.get('/services/:id', authRequired, (req, res) => {
+    // Détail d'un service
+  router.get('/services/:id', authRequired, async (req, res) => {
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.read')) {
+          return res.status(403).json({ error: 'Permission catalog.read requise' })
+        }
+
+        const result = await tursoDb.execute({
+          sql: 'SELECT * FROM service_catalog WHERE id = ? AND active = 1',
+          args: [req.params.id]
+        })
+        const service = result.rows[0]
+        if (!service) return res.status(404).json({ error: 'Service non trouvé' })
+
+        try { service.form_fields = service.form_fields ? JSON.parse(service.form_fields) : [] } catch { service.form_fields = [] }
+        return res.json(service)
+      } catch (err) {
+        console.error('Erreur Turso GET service:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.read')) {
+      return res.status(403).json({ error: 'Permission catalog.read requise' })
+    }
+
     const service = db.prepare('SELECT * FROM service_catalog WHERE id = ? AND active = 1').get(req.params.id)
     if (!service) return res.status(404).json({ error: 'Service non trouvé' })
 
-    try {
-      service.form_fields = service.form_fields ? JSON.parse(service.form_fields) : []
-    } catch {
-      service.form_fields = []
-    }
-
+    try { service.form_fields = service.form_fields ? JSON.parse(service.form_fields) : [] } catch { service.form_fields = [] }
     res.json(service)
   })
 
   // Créer une demande
-  router.post('/requests', authRequired, (req, res) => {
+  router.post('/requests', authRequired, async (req, res) => {
     const { service_id, form_data } = req.body
+    const { tenantId } = req.user
 
     if (!service_id || !form_data) {
       return res.status(400).json({ error: 'service_id et form_data obligatoires' })
+    }
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.requests.create')) {
+          return res.status(403).json({ error: 'Permission catalog.requests.create requise' })
+        }
+
+        const serviceResult = await tursoDb.execute({ sql: 'SELECT * FROM service_catalog WHERE id = ? AND active = 1', args: [service_id] })
+        const service = serviceResult.rows[0]
+        if (!service) return res.status(404).json({ error: 'Service non trouvé' })
+
+        const formDataStr = typeof form_data === 'string' ? form_data : JSON.stringify(form_data)
+        const initialStatus = service.requires_approval ? 'pending_approval' : 'approved'
+
+        // Vérification de l'utilisateur local (au cas où il vient de Turso)
+        let localUserId = req.user.id
+        // (Dans Turso, on suppose que l'utilisateur existe déjà, ou on l'insère)
+        // Pour simplifier, on utilise directement req.user.id
+
+        const result = await tursoDb.execute({
+          sql: `INSERT INTO service_requests (service_id, requester_id, form_data, status, approved_at)
+                VALUES (?, ?, ?, ?, ?)`,
+          args: [service_id, req.user.id, formDataStr, initialStatus, initialStatus === 'approved' ? new Date().toISOString() : null]
+        })
+
+        const requestId = Number(result.lastInsertRowid)
+
+        // Si pas d'approbation requise → créer le ticket directement
+        if (!service.requires_approval) {
+          await createTicketFromRequestTurso(tursoDb, requestId, service, req.user, logAction)
+        }
+
+        logAction(req.user.id, req.user.name, 'create', 'service_request', requestId, `Demande de service : ${service.name}`)
+
+        const newRequest = await tursoDb.execute({ sql: 'SELECT * FROM service_requests WHERE id = ?', args: [requestId] })
+        return res.status(201).json(newRequest.rows[0])
+      } catch (err) {
+        console.error('Erreur Turso POST request:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.requests.create')) {
+      return res.status(403).json({ error: 'Permission catalog.requests.create requise' })
     }
 
     const service = db.prepare('SELECT * FROM service_catalog WHERE id = ? AND active = 1').get(service_id)
@@ -213,7 +317,6 @@ export function createCatalogRouter(db, logAction) {
     const formDataStr = typeof form_data === 'string' ? form_data : JSON.stringify(form_data)
     const initialStatus = service.requires_approval ? 'pending_approval' : 'approved'
 
-    // 🔥 SÉCURITÉ ANTI-CRASH FK : Si l'utilisateur vient de Turso et n'existe pas en local, on le crée.
     let localUserId = req.user.id
     const userExists = db.prepare('SELECT id FROM users WHERE id = ?').get(localUserId)
     if (!userExists) {
@@ -221,7 +324,6 @@ export function createCatalogRouter(db, logAction) {
         db.prepare('INSERT INTO users (id, name, email, role) VALUES (?, ?, ?, ?)')
           .run(req.user.id, req.user.name, req.user.email || 'user@local', 'user')
       } catch (e) {
-        // Si l'ID est déjà pris, on utilise l'admin local (id=1) par défaut
         localUserId = 1
       }
     }
@@ -239,67 +341,142 @@ export function createCatalogRouter(db, logAction) {
 
     const requestId = result.lastInsertRowid
 
-    // Si pas d'approbation requise → créer le ticket directement
     if (!service.requires_approval) {
       createTicketFromRequest(db, requestId, service, req.user, logAction)
     }
 
-    logAction(localUserId, req.user.name, 'create', 'service_request', requestId,
-      `Demande de service : ${service.name}`)
+    logAction(localUserId, req.user.name, 'create', 'service_request', requestId, `Demande de service : ${service.name}`)
 
     const newRequest = db.prepare('SELECT * FROM service_requests WHERE id = ?').get(requestId)
     res.status(201).json(newRequest)
   })
 
   // Mes demandes
-  router.get('/my-requests', authRequired, (req, res) => {
+  router.get('/my-requests', authRequired, async (req, res) => {
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.requests.read')) {
+          return res.status(403).json({ error: 'Permission catalog.requests.read requise' })
+        }
+
+        const result = await tursoDb.execute({
+          sql: `
+            SELECT sr.*, sc.name as service_name, sc.icon as service_icon, sc.color as service_color, sc.category as service_category,
+                   u.name as approved_by_name, t.title as ticket_title, t.status as ticket_status
+            FROM service_requests sr
+            JOIN service_catalog sc ON sr.service_id = sc.id
+            LEFT JOIN users u ON sr.approved_by = u.id
+            LEFT JOIN tickets t ON sr.ticket_id = t.id
+            WHERE sr.requester_id = ? ORDER BY sr.created_at DESC
+          `,
+          args: [req.user.id]
+        })
+        
+        const requests = result.rows
+        for (const r of requests) {
+          try { r.form_data = r.form_data ? JSON.parse(r.form_data) : {} } catch { r.form_data = {} }
+        }
+        return res.json(requests)
+      } catch (err) {
+        console.error('Erreur Turso GET my-requests:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.requests.read')) {
+      return res.status(403).json({ error: 'Permission catalog.requests.read requise' })
+    }
+
     const requests = db.prepare(`
-      SELECT
-        sr.*,
-        sc.name as service_name,
-        sc.icon as service_icon,
-        sc.color as service_color,
-        sc.category as service_category,
-        u.name as approved_by_name,
-        t.title as ticket_title,
-        t.status as ticket_status
+      SELECT sr.*, sc.name as service_name, sc.icon as service_icon, sc.color as service_color, sc.category as service_category,
+             u.name as approved_by_name, t.title as ticket_title, t.status as ticket_status
       FROM service_requests sr
       JOIN service_catalog sc ON sr.service_id = sc.id
       LEFT JOIN users u ON sr.approved_by = u.id
       LEFT JOIN tickets t ON sr.ticket_id = t.id
-      WHERE sr.requester_id = ?
-      ORDER BY sr.created_at DESC
+      WHERE sr.requester_id = ? ORDER BY sr.created_at DESC
     `).all(req.user.id)
 
     for (const r of requests) {
-      try {
-        r.form_data = r.form_data ? JSON.parse(r.form_data) : {}
-      } catch {
-        r.form_data = {}
-      }
+      try { r.form_data = r.form_data ? JSON.parse(r.form_data) : {} } catch { r.form_data = {} }
     }
-
     res.json(requests)
   })
 
   // Détail d'une demande
-  router.get('/requests/:id', authRequired, (req, res) => {
+  router.get('/requests/:id', authRequired, async (req, res) => {
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.requests.read')) {
+          return res.status(403).json({ error: 'Permission catalog.requests.read requise' })
+        }
+
+        const result = await tursoDb.execute({
+          sql: `
+            SELECT sr.*, sc.name as service_name, sc.description as service_description,
+                   sc.icon as service_icon, sc.color as service_color, sc.category as service_category,
+                   sc.sla_hours, sc.form_fields as service_form_fields,
+                   u_req.name as requester_name, u_req.email as requester_email,
+                   u_app.name as approved_by_name,
+                   t.id as ticket_id, t.title as ticket_title, t.status as ticket_status
+            FROM service_requests sr
+            JOIN service_catalog sc ON sr.service_id = sc.id
+            LEFT JOIN users u_req ON sr.requester_id = u_req.id
+            LEFT JOIN users u_app ON sr.approved_by = u_app.id
+            LEFT JOIN tickets t ON sr.ticket_id = t.id
+            WHERE sr.id = ?
+          `,
+          args: [req.params.id]
+        })
+        
+        const request = result.rows[0]
+        if (!request) return res.status(404).json({ error: 'Demande non trouvée' })
+
+        // Vérifier accès (créateur ou admin)
+        if (request.requester_id !== req.user.id && req.user.role !== 'admin') {
+          return res.status(403).json({ error: 'Accès refusé' })
+        }
+
+        try {
+          request.form_data = request.form_data ? JSON.parse(request.form_data) : {}
+          request.service_form_fields = request.service_form_fields ? JSON.parse(request.service_form_fields) : []
+        } catch {
+          request.form_data = {}
+          request.service_form_fields = []
+        }
+
+        return res.json(request)
+      } catch (err) {
+        console.error('Erreur Turso GET request:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.requests.read')) {
+      return res.status(403).json({ error: 'Permission catalog.requests.read requise' })
+    }
+
     const request = db.prepare(`
-      SELECT
-        sr.*,
-        sc.name as service_name,
-        sc.description as service_description,
-        sc.icon as service_icon,
-        sc.color as service_color,
-        sc.category as service_category,
-        sc.sla_hours,
-        sc.form_fields as service_form_fields,
-        u_req.name as requester_name,
-        u_req.email as requester_email,
-        u_app.name as approved_by_name,
-        t.id as ticket_id,
-        t.title as ticket_title,
-        t.status as ticket_status
+      SELECT sr.*, sc.name as service_name, sc.description as service_description,
+             sc.icon as service_icon, sc.color as service_color, sc.category as service_category,
+             sc.sla_hours, sc.form_fields as service_form_fields,
+             u_req.name as requester_name, u_req.email as requester_email,
+             u_app.name as approved_by_name,
+             t.id as ticket_id, t.title as ticket_title, t.status as ticket_status
       FROM service_requests sr
       JOIN service_catalog sc ON sr.service_id = sc.id
       LEFT JOIN users u_req ON sr.requester_id = u_req.id
@@ -310,7 +487,6 @@ export function createCatalogRouter(db, logAction) {
 
     if (!request) return res.status(404).json({ error: 'Demande non trouvée' })
 
-    // Vérifier accès (créateur ou admin)
     if (request.requester_id !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Accès refusé' })
     }
@@ -329,17 +505,53 @@ export function createCatalogRouter(db, logAction) {
   // ============ ROUTES ADMIN ============
 
   // Toutes les demandes (admin)
-  router.get('/admin/requests', authRequired, adminOnly, (req, res) => {
+  router.get('/admin/requests', authRequired, async (req, res) => {
     const { status } = req.query
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.requests.manage')) {
+          return res.status(403).json({ error: 'Permission catalog.requests.manage requise' })
+        }
+
+        let query = `
+          SELECT sr.*, sc.name as service_name, sc.icon as service_icon, sc.color as service_color,
+                 u_req.name as requester_name, u_req.email as requester_email, u_app.name as approved_by_name
+          FROM service_requests sr
+          JOIN service_catalog sc ON sr.service_id = sc.id
+          LEFT JOIN users u_req ON sr.requester_id = u_req.id
+          LEFT JOIN users u_app ON sr.approved_by = u_app.id
+          WHERE 1=1
+        `
+        const args = []
+        if (status) { query += ' AND sr.status = ?'; args.push(status) }
+        query += ' ORDER BY sr.created_at DESC'
+
+        const result = await tursoDb.execute({ sql: query, args })
+        const requests = result.rows
+        for (const r of requests) {
+          try { r.form_data = r.form_data ? JSON.parse(r.form_data) : {} } catch { r.form_data = {} }
+        }
+        return res.json(requests)
+      } catch (err) {
+        console.error('Erreur Turso GET admin requests:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.requests.manage')) {
+      return res.status(403).json({ error: 'Permission catalog.requests.manage requise' })
+    }
+
     let query = `
-      SELECT
-        sr.*,
-        sc.name as service_name,
-        sc.icon as service_icon,
-        sc.color as service_color,
-        u_req.name as requester_name,
-        u_req.email as requester_email,
-        u_app.name as approved_by_name
+      SELECT sr.*, sc.name as service_name, sc.icon as service_icon, sc.color as service_color,
+             u_req.name as requester_name, u_req.email as requester_email, u_app.name as approved_by_name
       FROM service_requests sr
       JOIN service_catalog sc ON sr.service_id = sc.id
       LEFT JOIN users u_req ON sr.requester_id = u_req.id
@@ -347,148 +559,283 @@ export function createCatalogRouter(db, logAction) {
       WHERE 1=1
     `
     const params = []
-
-    if (status) {
-      query += ' AND sr.status = ?'
-      params.push(status)
-    }
-
+    if (status) { query += ' AND sr.status = ?'; params.push(status) }
     query += ' ORDER BY sr.created_at DESC'
 
     const requests = db.prepare(query).all(...params)
-
     for (const r of requests) {
-      try {
-        r.form_data = r.form_data ? JSON.parse(r.form_data) : {}
-      } catch {
-        r.form_data = {}
-      }
+      try { r.form_data = r.form_data ? JSON.parse(r.form_data) : {} } catch { r.form_data = {} }
     }
-
     res.json(requests)
   })
 
   // Approuver une demande
-  router.post('/admin/requests/:id/approve', authRequired, adminOnly, (req, res) => {
+  router.post('/admin/requests/:id/approve', authRequired, async (req, res) => {
     const requestId = parseInt(req.params.id)
-    const request = db.prepare('SELECT * FROM service_requests WHERE id = ?').get(requestId)
-    if (!request) return res.status(404).json({ error: 'Demande non trouvée' })
+    const { tenantId } = req.user
 
-    if (request.status !== 'pending_approval') {
-      return res.status(400).json({ error: 'Cette demande n\'est pas en attente d\'approbation' })
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.requests.manage')) {
+          return res.status(403).json({ error: 'Permission catalog.requests.manage requise' })
+        }
+
+        const reqResult = await tursoDb.execute({ sql: 'SELECT * FROM service_requests WHERE id = ?', args: [requestId] })
+        const request = reqResult.rows[0]
+        if (!request) return res.status(404).json({ error: 'Demande non trouvée' })
+        if (request.status !== 'pending_approval') return res.status(400).json({ error: 'Cette demande n\'est pas en attente d\'approbation' })
+
+        await tursoDb.execute({
+          sql: `UPDATE service_requests SET status = 'approved', approved_by = ?, approved_at = datetime('now', 'localtime') WHERE id = ?`,
+          args: [req.user.id, requestId]
+        })
+
+        const srvResult = await tursoDb.execute({ sql: 'SELECT * FROM service_catalog WHERE id = ?', args: [request.service_id] })
+        const service = srvResult.rows[0]
+        
+        const usrResult = await tursoDb.execute({ sql: 'SELECT id, name, email FROM users WHERE id = ?', args: [request.requester_id] })
+        const requester = usrResult.rows[0]
+
+        // Créer le ticket
+        await createTicketFromRequestTurso(tursoDb, requestId, service, requester, logAction)
+
+        logAction(req.user.id, req.user.name, 'approve', 'service_request', requestId, `Demande approuvée : ${service.name}`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso approve request:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
     }
 
-    db.prepare(`
-      UPDATE service_requests
-      SET status = 'approved',
-          approved_by = ?,
-          approved_at = datetime('now', 'localtime')
-      WHERE id = ?
-    `).run(req.user.id, requestId)
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.requests.manage')) {
+      return res.status(403).json({ error: 'Permission catalog.requests.manage requise' })
+    }
+
+    const request = db.prepare('SELECT * FROM service_requests WHERE id = ?').get(requestId)
+    if (!request) return res.status(404).json({ error: 'Demande non trouvée' })
+    if (request.status !== 'pending_approval') return res.status(400).json({ error: 'Cette demande n\'est pas en attente d\'approbation' })
+
+    db.prepare(`UPDATE service_requests SET status = 'approved', approved_by = ?, approved_at = datetime('now', 'localtime') WHERE id = ?`).run(req.user.id, requestId)
 
     const service = db.prepare('SELECT * FROM service_catalog WHERE id = ?').get(request.service_id)
     const requester = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(request.requester_id)
 
-    // Créer le ticket
     createTicketFromRequest(db, requestId, service, requester, logAction)
 
-    logAction(req.user.id, req.user.name, 'approve', 'service_request', requestId,
-      `Demande approuvée : ${service.name}`)
-
+    logAction(req.user.id, req.user.name, 'approve', 'service_request', requestId, `Demande approuvée : ${service.name}`)
     res.json({ success: true })
   })
 
   // Refuser une demande
-  router.post('/admin/requests/:id/reject', authRequired, adminOnly, (req, res) => {
+  router.post('/admin/requests/:id/reject', authRequired, async (req, res) => {
     const requestId = parseInt(req.params.id)
     const { reason } = req.body
+    const { tenantId } = req.user
 
     if (!reason || !reason.trim()) {
       return res.status(400).json({ error: 'Motif de refus obligatoire' })
     }
 
-    const request = db.prepare('SELECT * FROM service_requests WHERE id = ?').get(requestId)
-    if (!request) return res.status(404).json({ error: 'Demande non trouvée' })
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
-    if (request.status !== 'pending_approval') {
-      return res.status(400).json({ error: 'Cette demande n\'est pas en attente d\'approbation' })
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.requests.manage')) {
+          return res.status(403).json({ error: 'Permission catalog.requests.manage requise' })
+        }
+
+        const reqResult = await tursoDb.execute({ sql: 'SELECT * FROM service_requests WHERE id = ?', args: [requestId] })
+        const request = reqResult.rows[0]
+        if (!request) return res.status(404).json({ error: 'Demande non trouvée' })
+        if (request.status !== 'pending_approval') return res.status(400).json({ error: 'Cette demande n\'est pas en attente d\'approbation' })
+
+        await tursoDb.execute({
+          sql: `UPDATE service_requests SET status = 'rejected', approved_by = ?, approved_at = datetime('now', 'localtime'), rejection_reason = ? WHERE id = ?`,
+          args: [req.user.id, reason.trim(), requestId]
+        })
+
+        logAction(req.user.id, req.user.name, 'reject', 'service_request', requestId, `Demande refusée : ${reason}`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso reject request:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
     }
 
-    db.prepare(`
-      UPDATE service_requests
-      SET status = 'rejected',
-          approved_by = ?,
-          approved_at = datetime('now', 'localtime'),
-          rejection_reason = ?
-      WHERE id = ?
-    `).run(req.user.id, reason.trim(), requestId)
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.requests.manage')) {
+      return res.status(403).json({ error: 'Permission catalog.requests.manage requise' })
+    }
 
-    logAction(req.user.id, req.user.name, 'reject', 'service_request', requestId,
-      `Demande refusée : ${reason}`)
+    const request = db.prepare('SELECT * FROM service_requests WHERE id = ?').get(requestId)
+    if (!request) return res.status(404).json({ error: 'Demande non trouvée' })
+    if (request.status !== 'pending_approval') return res.status(400).json({ error: 'Cette demande n\'est pas en attente d\'approbation' })
 
+    db.prepare(`UPDATE service_requests SET status = 'rejected', approved_by = ?, approved_at = datetime('now', 'localtime'), rejection_reason = ? WHERE id = ?`)
+      .run(req.user.id, reason.trim(), requestId)
+
+    logAction(req.user.id, req.user.name, 'reject', 'service_request', requestId, `Demande refusée : ${reason}`)
     res.json({ success: true })
   })
 
   // CRUD services (admin)
-  router.get('/admin/services', authRequired, adminOnly, (req, res) => {
-    const services = db.prepare(`
-      SELECT
-        sc.*,
-        (SELECT COUNT(*) FROM service_requests WHERE service_id = sc.id) as request_count
-      FROM service_catalog sc
-      ORDER BY sc.category ASC, sc.name ASC
-    `).all()
+  router.get('/admin/services', authRequired, async (req, res) => {
+    const { tenantId } = req.user
 
-    for (const s of services) {
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
       try {
-        s.form_fields = s.form_fields ? JSON.parse(s.form_fields) : []
-      } catch {
-        s.form_fields = []
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.services.manage')) {
+          return res.status(403).json({ error: 'Permission catalog.services.manage requise' })
+        }
+
+        const result = await tursoDb.execute(`
+          SELECT sc.*, (SELECT COUNT(*) FROM service_requests WHERE service_id = sc.id) as request_count
+          FROM service_catalog sc ORDER BY sc.category ASC, sc.name ASC
+        `)
+        const services = result.rows
+        for (const s of services) {
+          try { s.form_fields = s.form_fields ? JSON.parse(s.form_fields) : [] } catch { s.form_fields = [] }
+        }
+        return res.json(services)
+      } catch (err) {
+        console.error('Erreur Turso GET admin services:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
       }
     }
 
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.services.manage')) {
+      return res.status(403).json({ error: 'Permission catalog.services.manage requise' })
+    }
+
+    const services = db.prepare(`
+      SELECT sc.*, (SELECT COUNT(*) FROM service_requests WHERE service_id = sc.id) as request_count
+      FROM service_catalog sc ORDER BY sc.category ASC, sc.name ASC
+    `).all()
+
+    for (const s of services) {
+      try { s.form_fields = s.form_fields ? JSON.parse(s.form_fields) : [] } catch { s.form_fields = [] }
+    }
     res.json(services)
   })
 
-  router.post('/admin/services', authRequired, adminOnly, (req, res) => {
-    const {
-      name, description, category, icon, color,
-      form_fields, sla_hours, requires_approval, approver_role
-    } = req.body
+  router.post('/admin/services', authRequired, async (req, res) => {
+    const { name, description, category, icon, color, form_fields, sla_hours, requires_approval, approver_role } = req.body
+    const { tenantId } = req.user
 
     if (!name) return res.status(400).json({ error: 'Le nom est obligatoire' })
+    
+    const formFieldsStr = typeof form_fields === 'string' ? form_fields : JSON.stringify(form_fields || [])
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.services.manage')) {
+          return res.status(403).json({ error: 'Permission catalog.services.manage requise' })
+        }
+
+        const result = await tursoDb.execute({
+          sql: `INSERT INTO service_catalog (name, description, category, icon, color, form_fields, sla_hours, requires_approval, approver_role)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [name.trim(), description?.trim() || null, category || null, icon || 'Package', color || 'blue',
+                 formFieldsStr, sla_hours || 24, requires_approval ? 1 : 0, approver_role || 'admin']
+        })
+
+        const newId = Number(result.lastInsertRowid)
+        logAction(req.user.id, req.user.name, 'create', 'service_catalog', newId, `Service créé : ${name}`)
+        return res.status(201).json({ id: newId, success: true })
+      } catch (err) {
+        console.error('Erreur Turso POST admin service:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.services.manage')) {
+      return res.status(403).json({ error: 'Permission catalog.services.manage requise' })
+    }
 
     try {
-      const formFieldsStr = typeof form_fields === 'string' ? form_fields : JSON.stringify(form_fields || [])
-
       const result = db.prepare(`
-        INSERT INTO service_catalog (
-          name, description, category, icon, color, form_fields,
-          sla_hours, requires_approval, approver_role
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        name.trim(),
-        description?.trim() || null,
-        category || null,
-        icon || 'Package',
-        color || 'blue',
-        formFieldsStr,
-        sla_hours || 24,
-        requires_approval ? 1 : 0,
-        approver_role || 'admin'
-      )
+        INSERT INTO service_catalog (name, description, category, icon, color, form_fields, sla_hours, requires_approval, approver_role)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(name.trim(), description?.trim() || null, category || null, icon || 'Package', color || 'blue',
+             formFieldsStr, sla_hours || 24, requires_approval ? 1 : 0, approver_role || 'admin')
 
-      logAction(req.user.id, req.user.name, 'create', 'service_catalog', result.lastInsertRowid,
-        `Service créé : ${name}`)
-
+      logAction(req.user.id, req.user.name, 'create', 'service_catalog', result.lastInsertRowid, `Service créé : ${name}`)
       res.status(201).json({ id: result.lastInsertRowid, success: true })
     } catch (err) {
       res.status(500).json({ error: err.message })
     }
   })
 
-  router.patch('/admin/services/:id', authRequired, adminOnly, (req, res) => {
+  router.patch('/admin/services/:id', authRequired, async (req, res) => {
     const targetId = parseInt(req.params.id)
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.services.manage')) {
+          return res.status(403).json({ error: 'Permission catalog.services.manage requise' })
+        }
+
+        const check = await tursoDb.execute({ sql: 'SELECT * FROM service_catalog WHERE id = ?', args: [targetId] })
+        const service = check.rows[0]
+        if (!service) return res.status(404).json({ error: 'Service non trouvé' })
+
+        const allowed = ['name', 'description', 'category', 'icon', 'color', 'form_fields', 'sla_hours', 'requires_approval', 'approver_role', 'active']
+        const updates = []
+        const args = []
+
+        for (const field of allowed) {
+          if (req.body[field] !== undefined) {
+            updates.push(`${field} = ?`)
+            if (field === 'form_fields') {
+              args.push(typeof req.body[field] === 'string' ? req.body[field] : JSON.stringify(req.body[field]))
+            } else if (field === 'requires_approval' || field === 'active') {
+              args.push(req.body[field] ? 1 : 0)
+            } else {
+              args.push(req.body[field])
+            }
+          }
+        }
+
+        if (updates.length === 0) return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
+        updates.push('updated_at = datetime(\'now\', \'localtime\')')
+        args.push(targetId)
+
+        await tursoDb.execute({ sql: `UPDATE service_catalog SET ${updates.join(', ')} WHERE id = ?`, args })
+        logAction(req.user.id, req.user.name, 'update', 'service_catalog', targetId, `Service modifié : ${service.name}`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso PATCH admin service:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.services.manage')) {
+      return res.status(403).json({ error: 'Permission catalog.services.manage requise' })
+    }
+
     const service = db.prepare('SELECT * FROM service_catalog WHERE id = ?').get(targetId)
     if (!service) return res.status(404).json({ error: 'Service non trouvé' })
 
@@ -510,28 +857,51 @@ export function createCatalogRouter(db, logAction) {
     }
 
     if (updates.length === 0) return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
-
     updates.push('updated_at = datetime(\'now\', \'localtime\')')
     values.push(targetId)
 
     db.prepare(`UPDATE service_catalog SET ${updates.join(', ')} WHERE id = ?`).run(...values)
-
-    logAction(req.user.id, req.user.name, 'update', 'service_catalog', targetId,
-      `Service modifié : ${service.name}`)
-
+    logAction(req.user.id, req.user.name, 'update', 'service_catalog', targetId, `Service modifié : ${service.name}`)
     res.json({ success: true })
   })
 
-  router.delete('/admin/services/:id', authRequired, adminOnly, (req, res) => {
+  router.delete('/admin/services/:id', authRequired, async (req, res) => {
     const targetId = parseInt(req.params.id)
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'catalog.services.manage')) {
+          return res.status(403).json({ error: 'Permission catalog.services.manage requise' })
+        }
+
+        const check = await tursoDb.execute({ sql: 'SELECT * FROM service_catalog WHERE id = ?', args: [targetId] })
+        const service = check.rows[0]
+        if (!service) return res.status(404).json({ error: 'Service non trouvé' })
+
+        await tursoDb.execute({ sql: 'UPDATE service_catalog SET active = 0 WHERE id = ?', args: [targetId] })
+        logAction(req.user.id, req.user.name, 'deactivate', 'service_catalog', targetId, `Service désactivé : ${service.name}`)
+        return res.json({ success: true })
+      } catch (err) {
+        console.error('Erreur Turso DELETE admin service:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'catalog.services.manage')) {
+      return res.status(403).json({ error: 'Permission catalog.services.manage requise' })
+    }
+
     const service = db.prepare('SELECT * FROM service_catalog WHERE id = ?').get(targetId)
     if (!service) return res.status(404).json({ error: 'Service non trouvé' })
 
     db.prepare('UPDATE service_catalog SET active = 0 WHERE id = ?').run(targetId)
-
-    logAction(req.user.id, req.user.name, 'deactivate', 'service_catalog', targetId,
-      `Service désactivé : ${service.name}`)
-
+    logAction(req.user.id, req.user.name, 'deactivate', 'service_catalog', targetId, `Service désactivé : ${service.name}`)
     res.json({ success: true })
   })
 
@@ -594,6 +964,49 @@ function createTicketFromRequest(db, requestId, service, requester, logAction) {
   if (logAction) {
     logAction(localUserId, requester.name, 'create', 'ticket', ticketId,
       `Ticket créé depuis la demande de service #${requestId}`)
+  }
+
+  return ticketId
+}
+
+// ==================== CRÉATION TICKET (TURSO) ====================
+
+async function createTicketFromRequestTurso(tursoDb, requestId, service, requester, logAction) {
+  const reqResult = await tursoDb.execute({ sql: 'SELECT * FROM service_requests WHERE id = ?', args: [requestId] })
+  const request = reqResult.rows[0]
+  if (!request || request.ticket_id) return // Déjà un ticket
+
+  let formData = {}
+  try { formData = JSON.parse(request.form_data) } catch {}
+
+  const description = `**Demande via le catalogue** : ${service.name}\n\n**Détails :**\n${Object.entries(formData)
+    .map(([k, v]) => `- **${k}** : ${v}`)
+    .join('\n')}`
+
+  // Créer le ticket
+  const insertResult = await tursoDb.execute({
+    sql: `INSERT INTO tickets (title, category, priority, description, created_by, creator)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [
+      `[Demande] ${service.name}`,
+      service.category || 'Autre',
+      service.sla_hours <= 2 ? 'Urgente' : service.sla_hours <= 24 ? 'Haute' : 'Moyenne',
+      description,
+      requester.id,
+      requester.name
+    ]
+  })
+
+  const ticketId = Number(insertResult.lastInsertRowid)
+
+  // Mettre à jour la demande
+  await tursoDb.execute({
+    sql: "UPDATE service_requests SET ticket_id = ?, status = 'delivered' WHERE id = ?",
+    args: [ticketId, requestId]
+  })
+
+  if (logAction) {
+    logAction(requester.id, requester.name, 'create', 'ticket', ticketId, `Ticket créé depuis la demande de service #${requestId}`)
   }
 
   return ticketId

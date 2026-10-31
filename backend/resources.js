@@ -2,19 +2,9 @@ import { Router } from 'express'
 import cron from 'node-cron'
 import { authRequired, adminOnly } from './auth.js'
 import { encrypt, decrypt } from './encryption.js'
-import { userHasPermission } from './knowledge.js'
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
-
-// Version async pour Turso
-async function userHasPermissionTurso(tursoDb, userId, role, code) {
-  if (role === 'admin') return true
-  const result = await tursoDb.execute({
-    sql: 'SELECT permission_code FROM user_permissions WHERE user_id = ? AND permission_code = ?',
-    args: [userId, code]
-  })
-  return result.rows.length > 0
-}
 
 export function initResourceTables(db) {
   db.exec(`
@@ -48,19 +38,15 @@ export function initResourceTables(db) {
   
   if (!bookingColumns.includes('patient_name')) {
     db.exec("ALTER TABLE resource_bookings ADD COLUMN patient_name TEXT")
-    console.log('🔧 Migration : colonne patient_name ajoutée')
   }
   if (!bookingColumns.includes('patient_dob')) {
     db.exec("ALTER TABLE resource_bookings ADD COLUMN patient_dob TEXT")
-    console.log('🔧 Migration : colonne patient_dob ajoutée')
   }
   if (!bookingColumns.includes('start_date')) {
     db.exec("ALTER TABLE resource_bookings ADD COLUMN start_date TEXT")
-    console.log('🔧 Migration : colonne start_date ajoutée')
   }
   if (!bookingColumns.includes('end_date')) {
     db.exec("ALTER TABLE resource_bookings ADD COLUMN end_date TEXT")
-    console.log('🔧 Migration : colonne end_date ajoutée')
   }
 
   console.log('✅ Tables Ressources Physiques initialisées')
@@ -81,6 +67,10 @@ export function createResourceRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'resources.list')) {
+          return res.status(403).json({ error: 'Permission resources.list requise' })
+        }
+
         let query = `
           SELECT r.*, rm.name as room_name, f.name as floor_name, s.name as site_name
           FROM physical_resources r
@@ -103,6 +93,10 @@ export function createResourceRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'resources.list')) {
+      return res.status(403).json({ error: 'Permission resources.list requise' })
+    }
+
     let query = `
       SELECT r.*, rm.name as room_name, f.name as floor_name, s.name as site_name
       FROM physical_resources r
@@ -120,7 +114,7 @@ export function createResourceRouter(db, logAction) {
   })
 
   // ==================== POST /api/resources ====================
-  router.post('/', adminOnly, async (req, res) => {
+  router.post('/', async (req, res) => {
     const { type, name, unique_code, room_id, status } = req.body
     const { tenantId } = req.user
 
@@ -132,6 +126,10 @@ export function createResourceRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'resources.create')) {
+          return res.status(403).json({ error: 'Permission resources.create requise' })
+        }
+
         const result = await tursoDb.execute({
           sql: `INSERT INTO physical_resources (type, name, unique_code, room_id, status) VALUES (?, ?, ?, ?, ?)`,
           args: [type, name, unique_code, room_id || null, status || 'Disponible']
@@ -147,6 +145,10 @@ export function createResourceRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'resources.create')) {
+      return res.status(403).json({ error: 'Permission resources.create requise' })
+    }
+
     try {
       const result = db.prepare(`
         INSERT INTO physical_resources (type, name, unique_code, room_id, status)
@@ -161,7 +163,7 @@ export function createResourceRouter(db, logAction) {
   })
 
   // ==================== PATCH /api/resources/:id ====================
-  router.patch('/:id', adminOnly, async (req, res) => {
+  router.patch('/:id', async (req, res) => {
     const { name, unique_code, room_id, status } = req.body
     const { tenantId } = req.user
 
@@ -171,6 +173,10 @@ export function createResourceRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'resources.edit')) {
+          return res.status(403).json({ error: 'Permission resources.edit requise' })
+        }
+
         const check = await tursoDb.execute({ sql: 'SELECT * FROM physical_resources WHERE id = ?', args: [req.params.id] })
         if (check.rows.length === 0) return res.status(404).json({ error: 'Ressource non trouvée' })
 
@@ -186,6 +192,10 @@ export function createResourceRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'resources.edit')) {
+      return res.status(403).json({ error: 'Permission resources.edit requise' })
+    }
+
     const resource = db.prepare('SELECT * FROM physical_resources WHERE id = ?').get(req.params.id)
     if (!resource) return res.status(404).json({ error: 'Ressource non trouvée' })
 
@@ -201,7 +211,7 @@ export function createResourceRouter(db, logAction) {
   })
 
   // ==================== DELETE /api/resources/:id ====================
-  router.delete('/:id', adminOnly, async (req, res) => {
+  router.delete('/:id', async (req, res) => {
     const { tenantId } = req.user
 
     if (tenantId) {
@@ -210,6 +220,9 @@ export function createResourceRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'resources.delete')) {
+          return res.status(403).json({ error: 'Permission resources.delete requise' })
+        }
         await tursoDb.execute({ sql: 'DELETE FROM physical_resources WHERE id = ?', args: [req.params.id] })
         return res.json({ success: true })
       } catch (err) {
@@ -218,9 +231,13 @@ export function createResourceRouter(db, logAction) {
       }
     }
 
+    if (!userHasPermission(db, req.user.id, req.user.role, 'resources.delete')) {
+      return res.status(403).json({ error: 'Permission resources.delete requise' })
+    }
     db.prepare('DELETE FROM physical_resources WHERE id = ?').run(req.params.id)
     res.json({ success: true })
   })
+
 
   // ==================== GET /api/resources/bookings ====================
   router.get('/bookings', async (req, res) => {
@@ -233,6 +250,10 @@ export function createResourceRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'resources.bookings.view')) {
+          return res.status(403).json({ error: 'Permission resources.bookings.view requise' })
+        }
+
         let query = `
           SELECT b.*, r.unique_code, r.name as resource_name, u.name as user_name
           FROM resource_bookings b
@@ -269,6 +290,10 @@ export function createResourceRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'resources.bookings.view')) {
+      return res.status(403).json({ error: 'Permission resources.bookings.view requise' })
+    }
+
     let query = `
       SELECT b.*, r.unique_code, r.name as resource_name, u.name as user_name
       FROM resource_bookings b
@@ -311,6 +336,10 @@ export function createResourceRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'resources.book')) {
+          return res.status(403).json({ error: 'Permission resources.book requise' })
+        }
+
         const resCheck = await tursoDb.execute({ sql: 'SELECT * FROM physical_resources WHERE id = ?', args: [req.params.id] })
         const resource = resCheck.rows[0]
         if (!resource) return res.status(404).json({ error: 'Ressource non trouvée' })
@@ -344,6 +373,10 @@ export function createResourceRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'resources.book')) {
+      return res.status(403).json({ error: 'Permission resources.book requise' })
+    }
+
     const resource = db.prepare('SELECT * FROM physical_resources WHERE id = ?').get(req.params.id)
     if (!resource) return res.status(404).json({ error: 'Ressource non trouvée' })
     const hasMedicalAccess = userHasPermission(db, req.user.id, req.user.role, 'medical.read')
@@ -384,6 +417,10 @@ export function createResourceRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'resources.bookings.cancel')) {
+          return res.status(403).json({ error: 'Permission resources.bookings.cancel requise' })
+        }
+
         const check = await tursoDb.execute({ sql: 'SELECT * FROM resource_bookings WHERE id = ?', args: [req.params.bookingId] })
         const booking = check.rows[0]
         if (!booking) return res.status(404).json({ error: 'Réservation non trouvée' })
@@ -398,6 +435,10 @@ export function createResourceRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'resources.bookings.cancel')) {
+      return res.status(403).json({ error: 'Permission resources.bookings.cancel requise' })
+    }
+
     const booking = db.prepare('SELECT * FROM resource_bookings WHERE id = ?').get(req.params.bookingId)
     if (!booking) return res.status(404).json({ error: 'Réservation non trouvée' })
     if (booking.user_id !== req.user.id && req.user.role !== 'admin') return res.status(403).json({ error: 'Non autorisé' })
@@ -416,6 +457,10 @@ export function createResourceRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'resources.bookings.cancel')) {
+          return res.status(403).json({ error: 'Permission resources.bookings.cancel requise' })
+        }
+
         const check = await tursoDb.execute({ sql: 'SELECT * FROM resource_bookings WHERE id = ?', args: [req.params.bookingId] })
         const booking = check.rows[0]
         if (!booking) return res.status(404).json({ error: 'Réservation non trouvée' })
@@ -430,6 +475,10 @@ export function createResourceRouter(db, logAction) {
     }
 
     // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'resources.bookings.cancel')) {
+      return res.status(403).json({ error: 'Permission resources.bookings.cancel requise' })
+    }
+
     const booking = db.prepare('SELECT * FROM resource_bookings WHERE id = ?').get(req.params.bookingId)
     if (!booking) return res.status(404).json({ error: 'Réservation non trouvée' })
     db.prepare('DELETE FROM resource_bookings WHERE id = ?').run(req.params.bookingId)
@@ -442,7 +491,6 @@ export function createResourceRouter(db, logAction) {
 
 // ==================== CRON : LIBÉRATION AUTOMATIQUE ====================
 export function startResourcesCron(db, logAction) {
-  // Toutes les 6 heures
   cron.schedule('0 */6 * * *', async () => {
     console.log('⏰ [CRON] Vérification des séjours terminés (Local + Turso)...')
     
@@ -492,3 +540,5 @@ export function startResourcesCron(db, logAction) {
 
   console.log('⏰ Cron de libération des lits démarré (toutes les 6 heures)')
 }
+
+
