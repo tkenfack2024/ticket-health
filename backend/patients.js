@@ -2,7 +2,6 @@ import { Router } from 'express'
 import multer from 'multer'
 import { authRequired, adminOnly } from './auth.js'
 import { encrypt, decrypt } from './encryption.js'
-// ✅ IMPORT DE LA BONNE FONCTION
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
@@ -21,6 +20,7 @@ export function initPatientTables(db) {
       nir TEXT,
       blood_type TEXT,
       allergies TEXT,
+      consent_research INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `)
@@ -109,6 +109,12 @@ export function createPatientRouter(db, logAction) {
     storage: multer.memoryStorage(),
     limits: { fileSize: 5 * 1024 * 1024 }
   })
+
+  const patientColumns = db.prepare("PRAGMA table_info(patients)").all().map(c => c.name)
+  if (!patientColumns.includes('consent_research')) {
+    db.exec("ALTER TABLE patients ADD COLUMN consent_research INTEGER NOT NULL DEFAULT 1")
+    console.log('🔧 Migration : colonne consent_research ajoutée à patients')
+  }
 
   // ==================== GET /api/patients ====================
   router.get('/', async (req, res) => {
@@ -382,7 +388,7 @@ export function createPatientRouter(db, logAction) {
 
   // ==================== POST /api/patients ====================
   router.post('/', async (req, res) => {
-    const { first_name, last_name, dob, gender, phone, address, nir, blood_type, allergies } = req.body
+        const { first_name, last_name, dob, gender, phone, address, nir, blood_type, allergies, consent_research } = req.body
     const { tenantId } = req.user
 
     if (!first_name || !last_name || !dob) {
@@ -407,10 +413,10 @@ export function createPatientRouter(db, logAction) {
         }
         const patient_code = `PAT-${nextNumber.toString().padStart(4, '0')}`
 
-        const result = await tursoDb.execute({
-          sql: `INSERT INTO patients (patient_code, first_name, last_name, dob, gender, phone, address, nir, blood_type, allergies)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [patient_code, first_name, last_name, dob, gender || 'Autre', phone, address, encNir, blood_type, encAllergies]
+                const result = await tursoDb.execute({
+          sql: `INSERT INTO patients (patient_code, first_name, last_name, dob, gender, phone, address, nir, blood_type, allergies, consent_research)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [patient_code, first_name, last_name, dob, gender || 'Autre', phone, address, encNir, blood_type, encAllergies, consent_research !== undefined ? (consent_research ? 1 : 0) : 1]
         })
 
         const newId = Number(result.lastInsertRowid)
@@ -430,10 +436,10 @@ export function createPatientRouter(db, logAction) {
         if (!isNaN(lastNum)) nextNumber = lastNum + 1
       }
       const patient_code = `PAT-${nextNumber.toString().padStart(4, '0')}`
-      const result = db.prepare(`
-        INSERT INTO patients (patient_code, first_name, last_name, dob, gender, phone, address, nir, blood_type, allergies)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(patient_code, first_name, last_name, dob, gender || 'Autre', phone, address, encNir, blood_type, encAllergies)
+            const result = db.prepare(`
+        INSERT INTO patients (patient_code, first_name, last_name, dob, gender, phone, address, nir, blood_type, allergies, consent_research)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(patient_code, first_name, last_name, dob, gender || 'Autre', phone, address, encNir, blood_type, encAllergies, consent_research !== undefined ? (consent_research ? 1 : 0) : 1)
       logAction(req.user.id, req.user.name, 'create', 'patient', result.lastInsertRowid, `Patient créé : ${first_name} ${last_name} (${patient_code})`)
       res.status(201).json({ success: true, id: result.lastInsertRowid, patient_code })
     } catch (err) {
@@ -443,7 +449,7 @@ export function createPatientRouter(db, logAction) {
 
   // ==================== PATCH /api/patients/:id ====================
   router.patch('/:id', async (req, res) => {
-    const { first_name, last_name, dob, gender, phone, address, nir, blood_type, allergies } = req.body
+        const { first_name, last_name, dob, gender, phone, address, nir, blood_type, allergies, consent_research } = req.body
     const { tenantId } = req.user
     const targetId = parseInt(req.params.id)
 
@@ -475,7 +481,7 @@ export function createPatientRouter(db, logAction) {
         const check = await tursoDb.execute({ sql: 'SELECT * FROM patients WHERE id = ?', args: [targetId] })
         if (check.rows.length === 0) return res.status(404).json({ error: 'Patient non trouvé' })
 
-        await tursoDb.execute({
+            await tursoDb.execute({
           sql: `
             UPDATE patients SET
               first_name = COALESCE(?, first_name),
@@ -486,12 +492,14 @@ export function createPatientRouter(db, logAction) {
               address = COALESCE(?, address),
               nir = COALESCE(?, nir),
               blood_type = COALESCE(?, blood_type),
-              allergies = COALESCE(?, allergies)
+              allergies = COALESCE(?, allergies),
+              consent_research = COALESCE(?, consent_research)
             WHERE id = ?
           `,
           args: [first_name?.trim() || null, last_name?.trim() || null, dob || null, gender || null,
                  phone !== undefined ? phone : null, address !== undefined ? address : null,
-                 encNir, blood_type !== undefined ? blood_type : null, encAllergies, targetId]
+                 encNir, blood_type !== undefined ? blood_type : null, encAllergies, 
+                 consent_research !== undefined ? (consent_research ? 1 : 0) : null, targetId]
         })
 
         logAction(req.user.id, req.user.name, 'update', 'patient', targetId, `Patient modifié : ${first_name} ${last_name}`)
@@ -506,7 +514,7 @@ export function createPatientRouter(db, logAction) {
     const existing = db.prepare('SELECT * FROM patients WHERE id = ?').get(targetId)
     if (!existing) return res.status(404).json({ error: 'Patient non trouvé' })
 
-    db.prepare(`
+        db.prepare(`
       UPDATE patients SET
         first_name = COALESCE(?, first_name),
         last_name = COALESCE(?, last_name),
@@ -516,11 +524,13 @@ export function createPatientRouter(db, logAction) {
         address = COALESCE(?, address),
         nir = COALESCE(?, nir),
         blood_type = COALESCE(?, blood_type),
-        allergies = COALESCE(?, allergies)
+        allergies = COALESCE(?, allergies),
+        consent_research = COALESCE(?, consent_research)
       WHERE id = ?
     `).run(first_name?.trim() || null, last_name?.trim() || null, dob || null, gender || null,
            phone !== undefined ? phone : null, address !== undefined ? address : null,
-           encNir, blood_type !== undefined ? blood_type : null, encAllergies, targetId)
+           encNir, blood_type !== undefined ? blood_type : null, encAllergies, 
+           consent_research !== undefined ? (consent_research ? 1 : 0) : null, targetId)
 
     logAction(req.user.id, req.user.name, 'update', 'patient', targetId, `Patient modifié : ${first_name} ${last_name}`)
     res.json({ success: true })

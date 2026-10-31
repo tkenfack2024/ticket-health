@@ -242,7 +242,7 @@ function PatientsTab() {
 // ==========================================
 function PatientModal({ item, onClose, onSuccess }) {
   const { hasPermission } = useAuth()
-  const [form, setForm] = useState({
+   const [form, setForm] = useState({
     first_name: item?.first_name || '', 
     last_name: item?.last_name || '', 
     dob: item?.dob || '', 
@@ -251,7 +251,8 @@ function PatientModal({ item, onClose, onSuccess }) {
     address: item?.address || '', 
     nir: item?.nir || '', 
     blood_type: item?.blood_type || '', 
-    allergies: item?.allergies || ''
+    allergies: item?.allergies || '',
+    consent_research: item?.consent_research !== undefined ? item.consent_research === 1 : true
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -332,6 +333,26 @@ function PatientModal({ item, onClose, onSuccess }) {
           <div>
             <label className="block text-sm mb-1 text-slate-700 dark:text-slate-300">Allergies connues (Chiffré)</label>
             <textarea rows={2} value={form.allergies} onChange={e => setForm({...form, allergies: e.target.value})} className="input-dark resize-none" placeholder="Ex: Pénicilline, Arachides..." />
+          </div>
+
+		          {/* ✅ NOUVEAU : Opt-out EHDS */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={form.consent_research} 
+                onChange={e => setForm({ ...form, consent_research: e.target.checked })} 
+                className="w-4 h-4 mt-0.5" 
+              />
+              <div>
+                <span className="text-sm font-medium text-blue-900 dark:text-blue-300">
+                  Consentement à la recherche (EHDS)
+                </span>
+                <p className="text-xs text-blue-800 dark:text-blue-400 mt-0.5">
+                  Le patient autorise l'utilisation de ses données anonymisées pour la recherche médicale.
+                </p>
+              </div>
+            </label>
           </div>
 
           <div className="flex gap-2 pt-2">
