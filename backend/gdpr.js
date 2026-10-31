@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 
 // ==================== INITIALISATION ====================
 
@@ -26,7 +27,26 @@ export function initGdprTables(db) {
     )
   `)
 
-  console.log('✅ Tables RGPD initialisées')
+  // ✅ NOUVEAU : Table AIPD / DPIA (Art. 35 RGPD)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS gdpr_dpia (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      processing_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN ('draft', 'in_progress', 'validated', 'rejected')),
+      context TEXT,
+      risks TEXT,
+      security_measures TEXT,
+      dpo_name TEXT,
+      dpo_validated_at TEXT,
+      dpo_comments TEXT,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      updated_at TEXT,
+      FOREIGN KEY (processing_id) REFERENCES gdpr_processing(id) ON DELETE CASCADE
+    )
+  `)
+
+  console.log('✅ Tables RGPD + AIPD initialisées')
 }
 
 // ==================== ROUTES ====================
@@ -234,6 +254,312 @@ export function createGdprRouter(db, logAction) {
     logAction(req.user.id, req.user.name, 'delete', 'gdpr_processing', targetId, `Traitement RGPD supprimé : ${existing.name}`)
     res.json({ success: true })
   })
+
+  // ==================== AIPD / DPIA (Art. 35 RGPD) ====================
+
+  // ---- GET /api/gdpr/processing/:id/dpia ----
+  // Récupérer l'AIPD d'un traitement (ou null si inexistante)
+  router.get('/processing/:id/dpia', async (req, res) => {
+    const { tenantId } = req.user
+    const processingId = parseInt(req.params.id)
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'gdpr.dpia.read')) {
+          return res.status(403).json({ error: 'Permission gdpr.dpia.read requise' })
+        }
+
+        const check = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_processing WHERE id = ?', args: [processingId] })
+        if (check.rows.length === 0) return res.status(404).json({ error: 'Traitement non trouvé' })
+
+        const result = await tursoDb.execute({
+          sql: 'SELECT * FROM gdpr_dpia WHERE processing_id = ? ORDER BY id DESC LIMIT 1',
+          args: [processingId]
+        })
+        const dpia = result.rows[0] || null
+
+        if (dpia) {
+          try { dpia.context = dpia.context ? JSON.parse(dpia.context) : null } catch { dpia.context = null }
+          try { dpia.risks = dpia.risks ? JSON.parse(dpia.risks) : [] } catch { dpia.risks = [] }
+          try { dpia.security_measures = dpia.security_measures ? JSON.parse(dpia.security_measures) : [] } catch { dpia.security_measures = [] }
+        }
+        return res.json(dpia)
+      } catch (err) {
+        console.error('Erreur Turso GET dpia:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'gdpr.dpia.read')) {
+      return res.status(403).json({ error: 'Permission gdpr.dpia.read requise' })
+    }
+    const processing = db.prepare('SELECT * FROM gdpr_processing WHERE id = ?').get(processingId)
+    if (!processing) return res.status(404).json({ error: 'Traitement non trouvé' })
+
+    const dpia = db.prepare('SELECT * FROM gdpr_dpia WHERE processing_id = ? ORDER BY id DESC LIMIT 1').get(processingId)
+    if (dpia) {
+      try { dpia.context = dpia.context ? JSON.parse(dpia.context) : null } catch { dpia.context = null }
+      try { dpia.risks = dpia.risks ? JSON.parse(dpia.risks) : [] } catch { dpia.risks = [] }
+      try { dpia.security_measures = dpia.security_measures ? JSON.parse(dpia.security_measures) : [] } catch { dpia.security_measures = [] }
+    }
+    res.json(dpia || null)
+  })
+
+  // ---- POST /api/gdpr/processing/:id/dpia ----
+  // Créer une AIPD pour un traitement
+  router.post('/processing/:id/dpia', async (req, res) => {
+    const { tenantId } = req.user
+    const processingId = parseInt(req.params.id)
+    const { context, risks, security_measures } = req.body
+
+    const contextStr = context ? JSON.stringify(context) : null
+    const risksStr = risks ? JSON.stringify(risks) : null
+    const measuresStr = security_measures ? JSON.stringify(security_measures) : null
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'gdpr.dpia.manage')) {
+          return res.status(403).json({ error: 'Permission gdpr.dpia.manage requise' })
+        }
+        const check = await tursoDb.execute({ sql: 'SELECT id FROM gdpr_processing WHERE id = ?', args: [processingId] })
+        if (check.rows.length === 0) return res.status(404).json({ error: 'Traitement non trouvé' })
+
+        const existing = await tursoDb.execute({
+          sql: "SELECT id FROM gdpr_dpia WHERE processing_id = ? AND status != 'validated' ORDER BY id DESC LIMIT 1",
+          args: [processingId]
+        })
+        if (existing.rows.length > 0) {
+          return res.status(409).json({ error: 'Une AIPD existe déjà pour ce traitement (non validée)', id: existing.rows[0].id })
+        }
+
+        const result = await tursoDb.execute({
+          sql: `INSERT INTO gdpr_dpia (processing_id, status, context, risks, security_measures)
+                VALUES (?, 'draft', ?, ?, ?)`,
+          args: [processingId, contextStr, risksStr, measuresStr]
+        })
+        const newId = Number(result.lastInsertRowid)
+        logAction(req.user.id, req.user.name, 'create', 'gdpr_dpia', newId, `AIPD créée pour traitement #${processingId}`)
+        const newDpia = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_dpia WHERE id = ?', args: [newId] })
+        return res.status(201).json(newDpia.rows[0])
+      } catch (err) {
+        console.error('Erreur Turso POST dpia:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'gdpr.dpia.manage')) {
+      return res.status(403).json({ error: 'Permission gdpr.dpia.manage requise' })
+    }
+    const processing = db.prepare('SELECT id FROM gdpr_processing WHERE id = ?').get(processingId)
+    if (!processing) return res.status(404).json({ error: 'Traitement non trouvé' })
+
+    const existing = db.prepare("SELECT id FROM gdpr_dpia WHERE processing_id = ? AND status != 'validated' ORDER BY id DESC LIMIT 1").get(processingId)
+    if (existing) return res.status(409).json({ error: 'Une AIPD existe déjà pour ce traitement (non validée)', id: existing.id })
+
+    const result = db.prepare(`
+      INSERT INTO gdpr_dpia (processing_id, status, context, risks, security_measures)
+      VALUES (?, 'draft', ?, ?, ?)
+    `).run(processingId, contextStr, risksStr, measuresStr)
+
+    const newDpia = db.prepare('SELECT * FROM gdpr_dpia WHERE id = ?').get(result.lastInsertRowid)
+    logAction(req.user.id, req.user.name, 'create', 'gdpr_dpia', newDpia.id, `AIPD créée pour traitement #${processingId}`)
+    res.status(201).json(newDpia)
+  })
+
+  // ---- PATCH /api/gdpr/dpia/:id ----
+  // Modifier une AIPD (brouillon ou en cours)
+  router.patch('/dpia/:id', async (req, res) => {
+    const { tenantId } = req.user
+    const targetId = parseInt(req.params.id)
+    const { context, risks, security_measures, status } = req.body
+
+    if (status && !['draft', 'in_progress', 'validated', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Statut invalide' })
+    }
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'gdpr.dpia.manage')) {
+          return res.status(403).json({ error: 'Permission gdpr.dpia.manage requise' })
+        }
+        const check = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_dpia WHERE id = ?', args: [targetId] })
+        const dpia = check.rows[0]
+        if (!dpia) return res.status(404).json({ error: 'AIPD non trouvée' })
+
+        const allowed = ['context', 'risks', 'security_measures', 'status']
+        const updates = []
+        const args = []
+        for (const field of allowed) {
+          if (req.body[field] !== undefined) {
+            updates.push(`${field} = ?`)
+            if (field === 'context' || field === 'risks' || field === 'security_measures') {
+              args.push(req.body[field] ? JSON.stringify(req.body[field]) : null)
+            } else {
+              args.push(req.body[field])
+            }
+          }
+        }
+        if (updates.length === 0) return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
+        updates.push("updated_at = datetime('now', 'localtime')")
+        args.push(targetId)
+        await tursoDb.execute({ sql: `UPDATE gdpr_dpia SET ${updates.join(', ')} WHERE id = ?`, args })
+        logAction(req.user.id, req.user.name, 'update', 'gdpr_dpia', targetId, `AIPD modifiée`)
+        const updated = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_dpia WHERE id = ?', args: [targetId] })
+        return res.json(updated.rows[0])
+      } catch (err) {
+        console.error('Erreur Turso PATCH dpia:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'gdpr.dpia.manage')) {
+      return res.status(403).json({ error: 'Permission gdpr.dpia.manage requise' })
+    }
+    const dpia = db.prepare('SELECT * FROM gdpr_dpia WHERE id = ?').get(targetId)
+    if (!dpia) return res.status(404).json({ error: 'AIPD non trouvée' })
+
+    const allowed = ['context', 'risks', 'security_measures', 'status']
+    const updates = []
+    const values = []
+    for (const field of allowed) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = ?`)
+        if (field === 'context' || field === 'risks' || field === 'security_measures') {
+          values.push(req.body[field] ? JSON.stringify(req.body[field]) : null)
+        } else {
+          values.push(req.body[field])
+        }
+      }
+    }
+    if (updates.length === 0) return res.status(400).json({ error: 'Aucun champ à mettre à jour' })
+    updates.push("updated_at = datetime('now', 'localtime')")
+    values.push(targetId)
+    db.prepare(`UPDATE gdpr_dpia SET ${updates.join(', ')} WHERE id = ?`).run(...values)
+    const updated = db.prepare('SELECT * FROM gdpr_dpia WHERE id = ?').get(targetId)
+    logAction(req.user.id, req.user.name, 'update', 'gdpr_dpia', targetId, `AIPD modifiée`)
+    res.json(updated)
+  })
+
+  // ---- POST /api/gdpr/dpia/:id/validate ----
+  // Valider ou rejeter une AIPD (DPO)
+  router.post('/dpia/:id/validate', async (req, res) => {
+    const { tenantId } = req.user
+    const targetId = parseInt(req.params.id)
+    const { decision, comments } = req.body
+
+    if (!['validated', 'rejected'].includes(decision)) {
+      return res.status(400).json({ error: 'Décision invalide (validated ou rejected)' })
+    }
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'gdpr.dpia.validate')) {
+          return res.status(403).json({ error: 'Permission gdpr.dpia.validate requise (DPO)' })
+        }
+        const check = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_dpia WHERE id = ?', args: [targetId] })
+        if (check.rows.length === 0) return res.status(404).json({ error: 'AIPD non trouvée' })
+
+        await tursoDb.execute({
+          sql: `UPDATE gdpr_dpia
+                SET status = ?, dpo_name = ?, dpo_validated_at = datetime('now', 'localtime'),
+                    dpo_comments = ?, updated_at = datetime('now', 'localtime')
+                WHERE id = ?`,
+          args: [decision, req.user.name, comments || null, targetId]
+        })
+        logAction(req.user.id, req.user.name, decision === 'validated' ? 'approve' : 'reject', 'gdpr_dpia', targetId, `AIPD ${decision === 'validated' ? 'validée' : 'rejetée'}`)
+        const updated = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_dpia WHERE id = ?', args: [targetId] })
+        return res.json(updated.rows[0])
+      } catch (err) {
+        console.error('Erreur Turso validate dpia:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'gdpr.dpia.validate')) {
+      return res.status(403).json({ error: 'Permission gdpr.dpia.validate requise (DPO)' })
+    }
+    const dpia = db.prepare('SELECT * FROM gdpr_dpia WHERE id = ?').get(targetId)
+    if (!dpia) return res.status(404).json({ error: 'AIPD non trouvée' })
+
+    db.prepare(`
+      UPDATE gdpr_dpia
+      SET status = ?, dpo_name = ?, dpo_validated_at = datetime('now', 'localtime'),
+          dpo_comments = ?, updated_at = datetime('now', 'localtime')
+      WHERE id = ?
+    `).run(decision, req.user.name, comments || null, targetId)
+
+    const updated = db.prepare('SELECT * FROM gdpr_dpia WHERE id = ?').get(targetId)
+    logAction(req.user.id, req.user.name, decision === 'validated' ? 'approve' : 'reject', 'gdpr_dpia', targetId, `AIPD ${decision === 'validated' ? 'validée' : 'rejetée'}`)
+    res.json(updated)
+  })
+
+  // ---- GET /api/gdpr/dpia ----
+  // Liste toutes les AIPD
+  router.get('/dpia', async (req, res) => {
+    const { tenantId } = req.user
+
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'gdpr.dpia.read')) {
+          return res.status(403).json({ error: 'Permission gdpr.dpia.read requise' })
+        }
+        const result = await tursoDb.execute(`
+          SELECT d.*, p.name as processing_name, p.is_sensitive as processing_is_sensitive
+          FROM gdpr_dpia d
+          JOIN gdpr_processing p ON d.processing_id = p.id
+          ORDER BY d.id DESC
+        `)
+        const rows = result.rows.map(r => {
+          try { r.risks = r.risks ? JSON.parse(r.risks) : [] } catch { r.risks = [] }
+          return r
+        })
+        return res.json(rows)
+      } catch (err) {
+        console.error('Erreur Turso GET all dpia:', err)
+        return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
+      }
+    }
+
+    // --- MODE SQLITE ---
+    if (!userHasPermission(db, req.user.id, req.user.role, 'gdpr.dpia.read')) {
+      return res.status(403).json({ error: 'Permission gdpr.dpia.read requise' })
+    }
+    const rows = db.prepare(`
+      SELECT d.*, p.name as processing_name, p.is_sensitive as processing_is_sensitive
+      FROM gdpr_dpia d
+      JOIN gdpr_processing p ON d.processing_id = p.id
+      ORDER BY d.id DESC
+    `).all()
+    for (const r of rows) {
+      try { r.risks = r.risks ? JSON.parse(r.risks) : [] } catch { r.risks = [] }
+    }
+    res.json(rows)
+  })
+
 
   // ---- GET /api/gdpr/export ----
   router.get('/export', async (req, res) => {

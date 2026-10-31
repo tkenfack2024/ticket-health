@@ -271,10 +271,26 @@ adminGetAssets: (params = {}) => {
   gdprDeleteProcessing: (id) => request(`/api/gdpr/processing/${id}`, {
     method: 'DELETE',
   }),
-  gdprExportUrl: () => {
+   gdprExportUrl: () => {
     const token = localStorage.getItem('ht_token')
     return `http://localhost:3001/api/gdpr/export?token=${token}`
   },
+
+  // GDPR — AIPD / DPIA (Art. 35)
+  gdprGetDpia: (processingId) => request(`/api/gdpr/processing/${processingId}/dpia`),
+  gdprCreateDpia: (processingId, data) => request(`/api/gdpr/processing/${processingId}/dpia`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  gdprUpdateDpia: (id, data) => request(`/api/gdpr/dpia/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  gdprValidateDpia: (id, data) => request(`/api/gdpr/dpia/${id}/validate`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  gdprGetAllDpia: () => request('/api/gdpr/dpia'),
 
   // Revue des logs
   adminReviewLog: (id) => request(`/api/admin/logs/${id}/review`, { method: 'POST' }),
