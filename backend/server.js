@@ -163,11 +163,16 @@ db.exec(`
     archived INTEGER NOT NULL DEFAULT 0,
     archived_at TEXT,
     created_at TEXT DEFAULT (datetime('now', 'localtime')),
+    dora_notification_date TEXT,
+    nis2_early_warning_at TEXT,
+    nis2_notification_at TEXT,
+    nis2_final_report_at TEXT,
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE SET NULL,
     FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL
   )
 `)
+
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS comments (
@@ -269,6 +274,10 @@ if (!ticketColumns.includes('archived_at')) {
   db.exec('ALTER TABLE tickets ADD COLUMN archived_at TEXT')
   console.log('🔧 Migration : colonne archived_at ajoutée')
 }
+
+  if (!ticketColumns.includes('nis2_early_warning_at')) db.exec('ALTER TABLE tickets ADD COLUMN nis2_early_warning_at TEXT')
+  if (!ticketColumns.includes('nis2_notification_at')) db.exec('ALTER TABLE tickets ADD COLUMN nis2_notification_at TEXT')
+  if (!ticketColumns.includes('nis2_final_report_at')) db.exec('ALTER TABLE tickets ADD COLUMN nis2_final_report_at TEXT')
 
 initSlaTables(db)
 
@@ -679,103 +688,6 @@ app.get('/api/notifications/recent', authRequired, async (req, res) => {
     }
   }
 
-// ---- GET /api/notifications/list ----
-// Récupère les notifications non lues de l'utilisateur
-app.get('/api/notifications/list', authRequired, async (req, res) => {
-  const { since } = req.query
-  const { tenantId, id: userId } = req.user
-
-  if (tenantId) {
-    const tenant = TENANTS[tenantId]
-    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
-    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
-
-    try {
-      let sql = 'SELECT * FROM notifications WHERE user_id = ? AND read = 0'
-      const args = [userId]
-      
-      if (since) {
-        sql += ' AND created_at > ?'
-        args.push(since)
-      }
-      
-      sql += ' ORDER BY created_at DESC LIMIT 20'
-
-      const result = await tursoDb.execute({ sql, args })
-      return res.json({ notifications: result.rows })
-    } catch (err) {
-      console.error('Erreur Turso GET notifications list:', err)
-      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
-    }
-  }
-
-  // MODE SQLITE
-  let sql = 'SELECT * FROM notifications WHERE user_id = ? AND read = 0'
-  const params = [userId]
-  
-  if (since) {
-    sql += ' AND created_at > ?'
-    params.push(since)
-  }
-  
-  sql += ' ORDER BY created_at DESC LIMIT 20'
-  const notifs = db.prepare(sql).all(...params)
-  res.json({ notifications: notifs })
-})
-
-// ---- PATCH /api/notifications/:id/read ----
-// Marque une notification comme lue
-app.patch('/api/notifications/:id/read', authRequired, async (req, res) => {
-  const { tenantId, id: userId } = req.user
-  const notifId = parseInt(req.params.id)
-
-  if (tenantId) {
-    const tenant = TENANTS[tenantId]
-    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
-    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
-
-    try {
-      await tursoDb.execute({
-        sql: 'UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?',
-        args: [notifId, userId]
-      })
-      return res.json({ success: true })
-    } catch (err) {
-      console.error('Erreur Turso PATCH notif read:', err)
-      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
-    }
-  }
-
-  db.prepare('UPDATE notifications SET read = 1 WHERE id = ? AND user_id = ?').run(notifId, userId)
-  res.json({ success: true })
-})
-
-// ---- PATCH /api/notifications/read-all ----
-// Marque toutes les notifications comme lues
-app.patch('/api/notifications/read-all', authRequired, async (req, res) => {
-  const { tenantId, id: userId } = req.user
-
-  if (tenantId) {
-    const tenant = TENANTS[tenantId]
-    if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
-    const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
-
-    try {
-      await tursoDb.execute({
-        sql: 'UPDATE notifications SET read = 1 WHERE user_id = ?',
-        args: [userId]
-      })
-      return res.json({ success: true })
-    } catch (err) {
-      console.error('Erreur Turso PATCH read-all:', err)
-      return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
-    }
-  }
-
-  db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').run(userId)
-  res.json({ success: true })
-})
-
   // --- MODE SQLITE ---
   try {
     const recentActions = db.prepare(`
@@ -1089,7 +1001,7 @@ app.post('/api/tickets', authRequired, async (req, res) => {
 
 // ---- PATCH /api/tickets/:id ----
 app.patch('/api/tickets/:id', authRequired, async (req, res) => {
-  const { status, assignee, incident_type, is_dora_major, dora_criteria, dora_notification_date } = req.body
+  const { status, assignee, incident_type, is_dora_major, dora_criteria, dora_notification_date, nis2_early_warning_at, nis2_notification_at, nis2_final_report_at } = req.body
   const targetId = parseInt(req.params.id)
   const { tenantId } = req.user
 
@@ -1142,7 +1054,7 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
         finalIncidentType = 'standard'
       }
 
-      await tursoDb.execute({
+            await tursoDb.execute({
         sql: `
           UPDATE tickets SET
             status = COALESCE(?, status),
@@ -1150,7 +1062,10 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
             incident_type = COALESCE(?, incident_type),
             is_dora_major = COALESCE(?, is_dora_major),
             dora_criteria = COALESCE(?, dora_criteria),
-            dora_notification_date = COALESCE(?, dora_notification_date)
+            dora_notification_date = COALESCE(?, dora_notification_date),
+            nis2_early_warning_at = COALESCE(?, nis2_early_warning_at),
+            nis2_notification_at = COALESCE(?, nis2_notification_at),
+            nis2_final_report_at = COALESCE(?, nis2_final_report_at)
           WHERE id = ?
         `,
         args: [
@@ -1161,6 +1076,9 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
           finalIsDoraMajor !== undefined ? (finalIsDoraMajor ? 1 : 0) : null,
           dora_criteria !== undefined ? (typeof dora_criteria === 'string' ? dora_criteria : JSON.stringify(dora_criteria)) : null,
           dora_notification_date || null,
+          nis2_early_warning_at || null,       // ✅ NOUVEAU
+          nis2_notification_at || null,        // ✅ NOUVEAU
+          nis2_final_report_at || null,        // ✅ NOUVEAU
           targetId
         ]
       })
@@ -1231,14 +1149,17 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
     finalIncidentTypeSqlite = 'standard'
   }
 
-  db.prepare(`
+   db.prepare(`
     UPDATE tickets SET
       status = COALESCE(?, status),
       assignee = CASE WHEN ? IS NULL THEN assignee ELSE ? END,
       incident_type = COALESCE(?, incident_type),
       is_dora_major = COALESCE(?, is_dora_major),
       dora_criteria = COALESCE(?, dora_criteria),
-      dora_notification_date = COALESCE(?, dora_notification_date)
+      dora_notification_date = COALESCE(?, dora_notification_date),
+      nis2_early_warning_at = COALESCE(?, nis2_early_warning_at),
+      nis2_notification_at = COALESCE(?, nis2_notification_at),
+      nis2_final_report_at = COALESCE(?, nis2_final_report_at)
     WHERE id = ?
   `).run(
     status || null,
@@ -1248,6 +1169,9 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
     finalIsDoraMajorSqlite !== undefined ? (finalIsDoraMajorSqlite ? 1 : 0) : null,
     dora_criteria !== undefined ? (typeof dora_criteria === 'string' ? dora_criteria : JSON.stringify(dora_criteria)) : null,
     dora_notification_date || null,
+    nis2_early_warning_at || null,       // ✅ NOUVEAU
+    nis2_notification_at || null,        // ✅ NOUVEAU
+    nis2_final_report_at || null,        // ✅ NOUVEAU
     targetId
   )
 

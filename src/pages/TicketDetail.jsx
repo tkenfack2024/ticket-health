@@ -7,6 +7,7 @@ import SlaPanel from '../components/SlaPanel'
 import KbSuggestions from '../components/KbSuggestions'
 import IncidentClassification from '../components/IncidentClassification'
 import TicketCis from '../components/TicketCis'
+import Nis2Countdown from '../components/Nis2Countdown'
 
 export default function TicketDetail() {
   const { id } = useParams()
@@ -279,6 +280,8 @@ export default function TicketDetail() {
 
         {/* Suggestions KB */}
         <KbSuggestions ticketId={parseInt(id)} ticketLoaded={!!ticket} />
+        {/* Compte à rebours NIS2 (affiché uniquement si incident majeur) */}
+<Nis2Countdown ticket={ticket} onUpdate={load} />
 
         {/* Classification incidents */}
         <IncidentClassification ticket={ticket} onUpdate={load} isAdmin={isAdmin} />
