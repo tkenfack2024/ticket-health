@@ -41,6 +41,8 @@ import { evaluateDoraMajor } from './incidents.js'
 import { initNotificationsTables, createNotification } from './notifications-db.js'
 import { initBannerTables, createBannerRouter } from './banners.js'
 import { initIctSupplierTables, createIctSupplierRouter } from './ict-suppliers.js'
+import { logAction as logActionHelper, logActionTurso } from './logger.js'
+
 
 // ✅ IMPORTS UNIQUES POUR TURSO
 import { createClient } from '@libsql/client'
@@ -374,18 +376,7 @@ if (!convertPermExists) {
 // ==================== HELPERS ====================
 
 function logAction(userId, userName, action, entity, entityId, details) {
-  try {
-    db.prepare(`
-      INSERT INTO logs (user_id, user_name, action, entity, entity_id, details)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(userId || null, userName || 'Système', action, entity, entityId || null, details || null)
-  } catch (err) {
-    // On ignore silencieusement l'erreur si l'utilisateur n'existe pas dans la base locale
-    // (Cas fréquent quand on est en mode multi-tenant avec Turso)
-    if (!err.message.includes('FOREIGN KEY')) {
-      console.error('Erreur logAction:', err)
-    }
-  }
+  return logActionHelper(db, userId, userName, action, entity, entityId, details)
 }
 
 // ==================== SEED : Admin & Modules ====================
@@ -964,7 +955,7 @@ app.post('/api/tickets', authRequired, async (req, res) => {
       const newTicket = newTicketResult.rows[0]
       newTicket.sla_status = computeSlaStatus(newTicket)
 
-      logAction(req.user.id, req.user.name, 'create', 'ticket', newTicket.id, `Ticket créé : ${newTicket.title}`)
+            await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'ticket', newTicket.id, `Ticket créé : ${newTicket.title}`)
       return res.status(201).json(newTicket)
     } catch (err) {
       console.error('Erreur Turso POST ticket:', err)
@@ -1135,7 +1126,7 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
       const updated = updatedResult.rows[0]
       updated.sla_status = computeSlaStatus(updated)
 
-      logAction(req.user.id, req.user.name, 'update', 'ticket', targetId, `Statut : ${updated.status}`)
+            await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'ticket', targetId, `Statut : ${updated.status}`)
       return res.json(updated)
     } catch (err) {
       console.error('Erreur Turso PATCH ticket:', err)
@@ -1279,7 +1270,7 @@ app.post('/api/tickets/:id/archive', authRequired, adminOnly, async (req, res) =
         sql: `UPDATE tickets SET archived = 1, archived_at = datetime('now', 'localtime') WHERE id = ?`,
         args: [req.params.id]
       })
-      logAction(req.user.id, req.user.name, 'archive', 'ticket', req.params.id, `Ticket archivé : ${ticket.title}`)
+            await logActionTurso(tursoDb, req.user.id, req.user.name, 'archive', 'ticket', req.params.id, `Ticket archivé : ${ticket.title}`)
       return res.json({ success: true })
     } catch (err) {
       console.error('Erreur Turso archive:', err)
