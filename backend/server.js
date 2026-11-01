@@ -1092,6 +1092,39 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
         })
       }
 
+      // ✅ NOUVEAU : Recalculer le SLA si la priorité a changé
+      if (priority !== undefined && priority !== ticket.priority) {
+        try {
+          const policyResult = await tursoDb.execute({
+            sql: 'SELECT * FROM sla_policies WHERE priority = ? AND active = 1',
+            args: [priority]
+          })
+          const policy = policyResult.rows[0]
+
+          if (policy) {
+            const ticketResult = await tursoDb.execute({
+              sql: 'SELECT created_at FROM tickets WHERE id = ?',
+              args: [targetId]
+            })
+            const createdAt = new Date(ticketResult.rows[0].created_at.replace(' ', 'T'))
+            const responseDeadline = new Date(createdAt.getTime() + policy.response_minutes * 60 * 1000)
+            const resolutionDeadline = new Date(createdAt.getTime() + policy.resolution_minutes * 60 * 1000)
+
+            const formatDate = (d) => {
+              const pad = (n) => String(n).padStart(2, '0')
+              return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+            }
+
+            await tursoDb.execute({
+              sql: 'UPDATE tickets SET sla_response_deadline = ?, sla_resolution_deadline = ?, sla_escalated = 0 WHERE id = ?',
+              args: [formatDate(responseDeadline), formatDate(resolutionDeadline), targetId]
+            })
+          }
+        } catch (err) {
+          console.error('Erreur recalcul SLA Turso:', err)
+        }
+      }
+
       const updatedResult = await tursoDb.execute({
         sql: `SELECT t.*, u.name as assigned_to_name FROM tickets t LEFT JOIN users u ON t.assignee = u.email WHERE t.id = ?`,
         args: [targetId]
@@ -1183,6 +1216,17 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
     else if (previousStatus === PAUSE_STATUS) resumeSla(db, targetId)
     if (status === 'Résolu') {
       db.prepare('UPDATE tickets SET resolved_at = datetime(\'now\', \'localtime\') WHERE id = ?').run(targetId)
+    }
+  }
+
+  // ✅ NOUVEAU : Recalculer le SLA si la priorité a changé
+  if (priority !== undefined && priority !== ticket.priority) {
+    try {
+      // Réinitialiser l'escalade pour permettre un nouveau déclenchement
+      db.prepare('UPDATE tickets SET sla_escalated = 0 WHERE id = ?').run(targetId)
+      applySlaToTicket(db, targetId, priority)
+    } catch (err) {
+      console.error('Erreur recalcul SLA SQLite:', err)
     }
   }
 
