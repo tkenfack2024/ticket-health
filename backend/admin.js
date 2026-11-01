@@ -5,6 +5,7 @@ import multer from 'multer'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 
 export function createAdminRouter(db, logAction) {
   const router = Router()
@@ -111,7 +112,7 @@ export function createAdminRouter(db, logAction) {
         })
         const newUser = newUserResult.rows[0]
 
-        logAction(req.user.id, req.user.name, 'create', 'user', newUserId, `Nouvel utilisateur : ${newUser.email} (${newUser.role}) [Turso]`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'user', newUserId, `Nouvel utilisateur : ${newUser.email} (${newUser.role}) [Turso]`)
         return res.status(201).json(newUser)
       } catch (err) {
         console.error('Erreur Turso POST user:', err)
@@ -203,7 +204,7 @@ export function createAdminRouter(db, logAction) {
         })
         const u = updated.rows[0]
 
-        logAction(req.user.id, req.user.name, 'update', 'user', targetId, `Utilisateur modifié : ${u.email} (${u.role}${u.custom_role ? ' / ' + u.custom_role : ''}, ${u.active ? 'actif' : 'désactivé'}) [Turso]`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'user', targetId, `Utilisateur modifié : ${u.email} (${u.role}${u.custom_role ? ' / ' + u.custom_role : ''}, ${u.active ? 'actif' : 'désactivé'}) [Turso]`)
         return res.json(u)
       } catch (err) {
         console.error('Erreur Turso PATCH user:', err)
@@ -283,7 +284,7 @@ export function createAdminRouter(db, logAction) {
           args: [hash, targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'reset-password', 'user', targetId, `Mot de passe réinitialisé : ${target.email} [Turso]`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'reset-password', 'user', targetId, `Mot de passe réinitialisé : ${target.email} [Turso]`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso reset password:', err)
@@ -334,8 +335,7 @@ export function createAdminRouter(db, logAction) {
         const target = check.rows[0]
         if (!target) return res.status(404).json({ error: 'Utilisateur non trouvé' })
 
-        await tursoDb.execute({ sql: 'UPDATE users SET active = 0 WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'deactivate', 'user', targetId, `Utilisateur désactivé : ${target.email} [Turso]`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'deactivate', 'user', targetId, `Utilisateur désactivé : ${target.email} [Turso]`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE user:', err)
@@ -439,7 +439,7 @@ export function createAdminRouter(db, logAction) {
 
         const newId = Number(result.lastInsertRowid)
         const newModule = await tursoDb.execute({ sql: 'SELECT * FROM modules WHERE id = ?', args: [newId] })
-        logAction(req.user.id, req.user.name, 'create', 'module', newId, `Module créé : ${name}`)
+               await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'module', newId, `Module créé : ${name}`)
         return res.status(201).json(newModule.rows[0])
       } catch (err) {
         console.error('Erreur Turso POST module:', err)
@@ -511,8 +511,7 @@ export function createAdminRouter(db, logAction) {
                  active !== undefined ? (active ? 1 : 0) : null, targetId]
         })
 
-        const updated = await tursoDb.execute({ sql: 'SELECT * FROM modules WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'update', 'module', targetId, `Module modifié : ${updated.rows[0].name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'module', targetId, `Module modifié : ${updated.rows[0].name}`)
         return res.json(updated.rows[0])
       } catch (err) {
         console.error('Erreur Turso PATCH module:', err)
@@ -579,14 +578,14 @@ export function createAdminRouter(db, logAction) {
         const ticketCountResult = await tursoDb.execute({ sql: 'SELECT COUNT(*) as c FROM tickets WHERE category = ?', args: [target.name] })
         const ticketCount = ticketCountResult.rows[0].c
 
-        if (ticketCount > 0) {
+                if (ticketCount > 0) {
           await tursoDb.execute({ sql: 'UPDATE modules SET active = 0 WHERE id = ?', args: [targetId] })
-          logAction(req.user.id, req.user.name, 'deactivate', 'module', targetId, `Module désactivé (${ticketCount} tickets liés) : ${target.name}`)
+          await logActionTurso(tursoDb, req.user.id, req.user.name, 'deactivate', 'module', targetId, `Module désactivé (${ticketCount} tickets liés) : ${target.name}`)
           return res.json({ success: true, deactivated: true, ticketCount })
         }
 
         await tursoDb.execute({ sql: 'DELETE FROM modules WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'module', targetId, `Module supprimé : ${target.name}`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'module', targetId, `Module supprimé : ${target.name}`)
         return res.json({ success: true, deleted: true })
       } catch (err) {
         console.error('Erreur Turso DELETE module:', err)
@@ -773,8 +772,7 @@ export function createAdminRouter(db, logAction) {
           args: [type, name.trim(), category || null, brand || null, model || null, serial_number || null, location || null, assigned_to || null, status || (type === 'hardware' ? 'En service' : 'Active'), purchase_date || null, warranty_end || null, editor || null, version || null, license_key || null, license_expires_at || null, license_count || null, notes || null]
         })
         const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'asset', newId, `${type === 'hardware' ? 'Hardware' : 'Software'} créé : ${name}`)
-        const newAsset = await tursoDb.execute({ sql: 'SELECT * FROM assets WHERE id = ?', args: [newId] })
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'asset', newId, `${type === 'hardware' ? 'Hardware' : 'Software'} créé : ${name}`)
         return res.status(201).json(newAsset.rows[0])
       } catch (err) {
         console.error('Erreur Turso POST asset:', err)
@@ -838,7 +836,7 @@ export function createAdminRouter(db, logAction) {
 
         await tursoDb.execute({ sql: `UPDATE assets SET ${updates.join(', ')} WHERE id = ?`, args })
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM assets WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'update', 'asset', targetId, `${updated.rows[0].type === 'hardware' ? 'Hardware' : 'Software'} modifié : ${updated.rows[0].name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'asset', targetId, `${updated.rows[0].type === 'hardware' ? 'Hardware' : 'Software'} modifié : ${updated.rows[0].name}`)
         return res.json(updated.rows[0])
       } catch (err) {
         console.error('Erreur Turso PATCH asset:', err)
@@ -902,7 +900,7 @@ export function createAdminRouter(db, logAction) {
 
         await tursoDb.execute({ sql: 'UPDATE tickets SET asset_id = NULL WHERE asset_id = ?', args: [targetId] })
         await tursoDb.execute({ sql: 'DELETE FROM assets WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'asset', targetId, `${target.type === 'hardware' ? 'Hardware' : 'Software'} supprimé : ${target.name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'asset', targetId, `${target.type === 'hardware' ? 'Hardware' : 'Software'} supprimé : ${target.name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE asset:', err)
@@ -1087,8 +1085,8 @@ export function createAdminRouter(db, logAction) {
         const ticket = check.rows[0]
         if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
-        await tursoDb.execute({ sql: `UPDATE tickets SET archived = 0, archived_at = NULL WHERE id = ?`, args: [targetId] })
-        logAction(req.user.id, req.user.name, 'restore', 'ticket', targetId, `Ticket restauré : ${ticket.title}`)
+               await tursoDb.execute({ sql: `UPDATE tickets SET archived = 0, archived_at = NULL WHERE id = ?`, args: [targetId] })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'restore', 'ticket', targetId, `Ticket restauré : ${ticket.title}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso restore:', err)
@@ -1135,8 +1133,8 @@ export function createAdminRouter(db, logAction) {
         const ticket = check.rows[0]
         if (!ticket) return res.status(404).json({ error: 'Ticket non trouvé' })
 
-        await tursoDb.execute({ sql: 'DELETE FROM tickets WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'ticket', targetId, `Ticket SUPPRIMÉ définitivement : ${ticket.title}`)
+                await tursoDb.execute({ sql: 'DELETE FROM tickets WHERE id = ?', args: [targetId] })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'ticket', targetId, `Ticket SUPPRIMÉ définitivement : ${ticket.title}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE ticket:', err)
@@ -1252,7 +1250,7 @@ export function createAdminRouter(db, logAction) {
           args: [assetId, req.file.originalname, req.file.mimetype, req.file.size, req.file.buffer, req.user.id]
         })
 
-        logAction(req.user.id, req.user.name, 'upload', 'asset', assetId, `Fichier ajouté à "${asset.name}" : ${req.file.originalname}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'upload', 'asset', assetId, `Fichier ajouté à "${asset.name}" : ${req.file.originalname}`)
         return res.status(201).json({ id: Number(result.lastInsertRowid) })
       } catch (err) {
         console.error('Erreur Turso POST asset file:', err)
@@ -1409,7 +1407,7 @@ export function createAdminRouter(db, logAction) {
         }
       }
 
-      logAction(req.user.id, req.user.name, 'import', 'asset', null, `Import CSV : ${inserted.length} asset(s) créé(s), ${errors.length} erreur(s)`)
+           await logActionTurso(tursoDb, req.user.id, req.user.name, 'import', 'asset', null, `Import CSV : ${inserted.length} asset(s) créé(s), ${errors.length} erreur(s)`)
       res.json({ success: true, inserted: inserted.length, errors: errors.length, details: inserted, errorMessages: errors })
     } catch (err) {
       console.error(err)
@@ -2007,7 +2005,10 @@ export function createAdminRouter(db, logAction) {
           sql: 'INSERT INTO roles (name, description) VALUES (?, ?)',
           args: [name.trim(), description || null]
         })
+
+	        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'role', Number(result.lastInsertRowid), `Rôle créé : ${name.trim()}`)
         return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) })
+        
       } catch (err) {
         if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce rôle existe déjà' })
         return res.status(500).json({ error: err.message })
