@@ -3,6 +3,7 @@ import multer from 'multer'
 import { authRequired, adminOnly } from './auth.js'
 import { encrypt, decrypt } from './encryption.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 
@@ -419,8 +420,7 @@ export function createPatientRouter(db, logAction) {
           args: [patient_code, first_name, last_name, dob, gender || 'Autre', phone, address, encNir, blood_type, encAllergies, consent_research !== undefined ? (consent_research ? 1 : 0) : 1]
         })
 
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'patient', newId, `Patient créé : ${first_name} ${last_name} (${patient_code})`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'patient', newId, `Patient créé : ${first_name} ${last_name} (${patient_code})`)
         return res.status(201).json({ success: true, id: newId, patient_code })
       } catch (err) {
         console.error('Erreur Turso POST patient:', err)
@@ -502,7 +502,7 @@ export function createPatientRouter(db, logAction) {
                  consent_research !== undefined ? (consent_research ? 1 : 0) : null, targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'update', 'patient', targetId, `Patient modifié : ${first_name} ${last_name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'patient', targetId, `Patient modifié : ${first_name} ${last_name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso PATCH patient:', err)
@@ -642,7 +642,7 @@ export function createPatientRouter(db, logAction) {
         }
 
         const newRecordId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'medical_record', newRecordId, `Consultation enregistrée`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'medical_record', newRecordId, `Consultation enregistrée`)
         return res.status(201).json({ success: true, id: newRecordId })
       } catch (err) {
         console.error('Erreur Turso POST record:', err)
@@ -685,7 +685,7 @@ export function createPatientRouter(db, logAction) {
         })
 
         const newVisitId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'visit', newVisitId, `Patient envoyé en consultation`)
+               await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'visit', newVisitId, `Patient envoyé en consultation`)
         return res.status(201).json({ success: true, id: newVisitId })
       } catch (err) {
         console.error('Erreur Turso POST visit:', err)
@@ -750,7 +750,7 @@ export function createPatientRouter(db, logAction) {
         })
 
         const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'prescribe', 'medical_record', req.params.recordId, `Ordonnance : ${medication}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'prescribe', 'medical_record', req.params.recordId, `Ordonnance : ${medication}`)
         return res.status(201).json({ success: true, id: newId })
       } catch (err) {
         console.error('Erreur Turso POST prescription:', err)
@@ -914,7 +914,7 @@ export function createPatientRouter(db, logAction) {
           args: [req.params.id]
         })
 
-        logAction(req.user.id, req.user.name, 'delete', 'patient', req.params.id, `Patient supprimé : ${patient.first_name} ${patient.last_name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'patient', req.params.id, `Patient supprimé : ${patient.first_name} ${patient.last_name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE patient:', err)
