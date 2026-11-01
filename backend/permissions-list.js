@@ -153,6 +153,12 @@ export const PERMISSIONS_LIST = [
   { code: 'notifications.banner.read', label: 'Voir les bannières système', module: 'notifications' },
   { code: 'notifications.banner.manage', label: 'Gérer les bannières système', module: 'notifications' },
 
+// ==================== TIERS ICT (DORA) ====================
+{ code: 'ict_suppliers.list', label: 'Voir les tiers ICT', module: 'ict_suppliers' },
+{ code: 'ict_suppliers.create', label: 'Créer un tiers ICT', module: 'ict_suppliers' },
+{ code: 'ict_suppliers.edit', label: 'Modifier un tiers ICT', module: 'ict_suppliers' },
+{ code: 'ict_suppliers.delete', label: 'Supprimer un tiers ICT', module: 'ict_suppliers' },
+
   // ==================== 10. STOCK, BÂTIMENTS, RESSOURCES, BACKUPS (19) ====================
   { code: 'stock.list', label: 'Voir le stock', module: 'stock' },
   { code: 'stock.create', label: 'Ajouter un article au stock', module: 'stock' },
@@ -173,4 +179,10 @@ export const PERMISSIONS_LIST = [
   { code: 'backups.restore', label: 'Restaurer une sauvegarde', module: 'backups' },
   { code: 'backups.config', label: 'Modifier la config des sauvegardes', module: 'backups' },
   { code: 'notifications.preferences', label: 'Gérer ses préférences de notification', module: 'notifications' }
+
+  // ==================== 12. TIERS ICT (DORA) ====================
+  { code: 'ict_suppliers.list', label: 'Voir les tiers ICT', module: 'ict_suppliers' },
+  { code: 'ict_suppliers.create', label: 'Créer un tiers ICT', module: 'ict_suppliers' },
+  { code: 'ict_suppliers.edit', label: 'Modifier un tiers ICT', module: 'ict_suppliers' },
+  { code: 'ict_suppliers.delete', label: 'Supprimer un tiers ICT', module: 'ict_suppliers' },
 ];

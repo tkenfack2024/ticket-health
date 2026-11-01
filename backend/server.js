@@ -40,6 +40,7 @@ import { initBackupTables, createBackupRouter, startBackupCron } from './backup.
 import { evaluateDoraMajor } from './incidents.js'
 import { initNotificationsTables, createNotification } from './notifications-db.js'
 import { initBannerTables, createBannerRouter } from './banners.js'
+import { initIctSupplierTables, createIctSupplierRouter } from './ict-suppliers.js'
 
 // ✅ IMPORTS UNIQUES POUR TURSO
 import { createClient } from '@libsql/client'
@@ -336,6 +337,7 @@ initPatientTables(db)
 initStockTables(db)
 initBackupTables(db)
 initBannerTables(db)
+initIctSupplierTables(db)
 
 // ==================== SEED : Permissions ====================
 
@@ -434,6 +436,7 @@ app.use('/api/patients', createPatientRouter(db, logAction))
 app.use('/api/stock', createStockRouter(db, logAction))
 app.use('/api/admin/backups', createBackupRouter(db, logAction))
 app.use('/api/banners', createBannerRouter(db, logAction))
+app.use('/api/ict-suppliers', createIctSupplierRouter(db, logAction))
 
 initCatalogTables(db)
 initChangeTables(db)

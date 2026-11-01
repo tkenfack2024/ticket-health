@@ -1,6 +1,6 @@
 import { useState } from 'react'
 // ✅ AJOUT DE L'ICÔNE DATABASE ICI
-import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield, FileText, Network, Bug, ShoppingBag, GitBranch, ShieldAlert, Building2, BarChart3, Database, Megaphone } from 'lucide-react'
+import { Users, Puzzle, Package, ScrollText, Archive, Clock, Shield, FileText, Network, Bug, ShoppingBag, GitBranch, ShieldAlert, Building2, BarChart3, Database, Megaphone, Server } from 'lucide-react'
 
 import AdminUsers from './admin/Users'
 import AdminModules from './admin/Modules'
@@ -17,6 +17,7 @@ import AdminChanges from './admin/Changes'
 import AdminRisks from './admin/Risks'
 import AdminSuppliers from './admin/Suppliers'
 import AdminCapacity from './admin/Capacity'
+import AdminIctSuppliers from './admin/IctSuppliers'
 
 // ✅ AJOUT DE L'IMPORT DU COMPOSANT BACKUP ICI
 import AdminBackup from './admin/Backup'
@@ -42,6 +43,7 @@ const TABS = [
   { id: 'backups', label: 'Backups', icon: Database },
   { id: 'patients-import-export', label: 'Import/Export Patients', icon: Users },
   { id: 'banners', label: 'Bannières', icon: Megaphone },
+  { id: 'ict-suppliers', label: 'Tiers ICT (DORA)', icon: Server },
 ]
 
 export default function Admin() {
@@ -102,6 +104,7 @@ export default function Admin() {
           {activeTab === 'backups' && <AdminBackup />}
 	  {activeTab === 'patients-import-export' && <AdminPatientsImportExport />}
 	  {activeTab === 'banners' && <AdminBanners />}
+	  {activeTab === 'ict-suppliers' && <AdminIctSuppliers />}
         </div>
       </div>
     </div>

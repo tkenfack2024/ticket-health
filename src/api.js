@@ -727,4 +727,24 @@ adminGetAssets: (params = {}) => {
     method: 'DELETE',
   }),
 
+  // ============ TIERS ICT (DORA) ============
+  ictSuppliersGetAll: (params = {}) => {
+    const clean = {}
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') clean[k] = v
+    })
+    const qs = new URLSearchParams(clean).toString()
+    return request(`/api/ict-suppliers${qs ? '?' + qs : ''}`)
+  },
+  ictSuppliersCreate: (data) => request('/api/ict-suppliers', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
+  ictSuppliersUpdate: (id, data) => request(`/api/ict-suppliers/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  }),
+  ictSuppliersDelete: (id) => request(`/api/ict-suppliers/${id}`, { method: 'DELETE' }),
+
+
 }
