@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
 import { applySlaToTicket } from './sla.js'
-import { userHasPermission, userHasPermissionTurso } from './knowledge.js' 
+import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 
@@ -296,7 +297,7 @@ export function createCatalogRouter(db, logAction) {
           await createTicketFromRequestTurso(tursoDb, requestId, service, req.user, logAction)
         }
 
-        logAction(req.user.id, req.user.name, 'create', 'service_request', requestId, `Demande de service : ${service.name}`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'service_request', requestId, `Demande de service : ${service.name}`)
 
         const newRequest = await tursoDb.execute({ sql: 'SELECT * FROM service_requests WHERE id = ?', args: [requestId] })
         return res.status(201).json(newRequest.rows[0])
@@ -603,7 +604,7 @@ export function createCatalogRouter(db, logAction) {
         // Créer le ticket
         await createTicketFromRequestTurso(tursoDb, requestId, service, requester, logAction)
 
-        logAction(req.user.id, req.user.name, 'approve', 'service_request', requestId, `Demande approuvée : ${service.name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'approve', 'service_request', requestId, `Demande approuvée : ${service.name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso approve request:', err)
@@ -661,7 +662,7 @@ export function createCatalogRouter(db, logAction) {
           args: [req.user.id, reason.trim(), requestId]
         })
 
-        logAction(req.user.id, req.user.name, 'reject', 'service_request', requestId, `Demande refusée : ${reason}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'reject', 'service_request', requestId, `Demande refusée : ${reason}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso reject request:', err)
@@ -756,7 +757,7 @@ export function createCatalogRouter(db, logAction) {
         })
 
         const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'service_catalog', newId, `Service créé : ${name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'service_catalog', newId, `Service créé : ${name}`)
         return res.status(201).json({ id: newId, success: true })
       } catch (err) {
         console.error('Erreur Turso POST admin service:', err)
@@ -823,7 +824,7 @@ export function createCatalogRouter(db, logAction) {
         args.push(targetId)
 
         await tursoDb.execute({ sql: `UPDATE service_catalog SET ${updates.join(', ')} WHERE id = ?`, args })
-        logAction(req.user.id, req.user.name, 'update', 'service_catalog', targetId, `Service modifié : ${service.name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'service_catalog', targetId, `Service modifié : ${service.name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso PATCH admin service:', err)
@@ -884,7 +885,7 @@ export function createCatalogRouter(db, logAction) {
         if (!service) return res.status(404).json({ error: 'Service non trouvé' })
 
         await tursoDb.execute({ sql: 'UPDATE service_catalog SET active = 0 WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'deactivate', 'service_catalog', targetId, `Service désactivé : ${service.name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'deactivate', 'service_catalog', targetId, `Service désactivé : ${service.name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE admin service:', err)
@@ -1039,8 +1040,8 @@ async function createTicketFromRequestTurso(tursoDb, requestId, service, request
     args: [ticketId, requestId]
   })
 
-  if (logAction) {
-    logAction(requester.id, requester.name, 'create', 'ticket', ticketId, `Ticket créé depuis la demande de service #${requestId}`)
+    if (logAction) {
+    await logActionTurso(tursoDb, requester.id, requester.name, 'create', 'ticket', ticketId, `Ticket créé depuis la demande de service #${requestId}`)
   }
 
   return ticketId
