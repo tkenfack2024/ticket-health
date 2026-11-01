@@ -1001,7 +1001,7 @@ app.post('/api/tickets', authRequired, async (req, res) => {
 
 // ---- PATCH /api/tickets/:id ----
 app.patch('/api/tickets/:id', authRequired, async (req, res) => {
-  const { status, assignee, incident_type, is_dora_major, dora_criteria, dora_notification_date, nis2_early_warning_at, nis2_notification_at, nis2_final_report_at } = req.body
+  const { status, assignee, priority, incident_type, is_dora_major, dora_criteria, dora_notification_date, nis2_early_warning_at, nis2_notification_at, nis2_final_report_at } = req.body
   const targetId = parseInt(req.params.id)
   const { tenantId } = req.user
 
@@ -1059,6 +1059,7 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
           UPDATE tickets SET
             status = COALESCE(?, status),
             assignee = CASE WHEN ? IS NULL THEN assignee ELSE ? END,
+	    priority = COALESCE(?, priority),
             incident_type = COALESCE(?, incident_type),
             is_dora_major = COALESCE(?, is_dora_major),
             dora_criteria = COALESCE(?, dora_criteria),
@@ -1072,6 +1073,7 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
           status || null,
           assignee === undefined ? null : assignee,
           assignee === undefined ? null : (assignee || '-'),
+	  priority || null,
           finalIncidentType || null,
           finalIsDoraMajor !== undefined ? (finalIsDoraMajor ? 1 : 0) : null,
           dora_criteria !== undefined ? (typeof dora_criteria === 'string' ? dora_criteria : JSON.stringify(dora_criteria)) : null,
@@ -1165,13 +1167,14 @@ app.patch('/api/tickets/:id', authRequired, async (req, res) => {
     status || null,
     assignee === undefined ? null : assignee,
     assignee === undefined ? null : (assignee || '-'),
+    priority || null,
     finalIncidentTypeSqlite || null,
     finalIsDoraMajorSqlite !== undefined ? (finalIsDoraMajorSqlite ? 1 : 0) : null,
     dora_criteria !== undefined ? (typeof dora_criteria === 'string' ? dora_criteria : JSON.stringify(dora_criteria)) : null,
     dora_notification_date || null,
-    nis2_early_warning_at || null,       // ✅ NOUVEAU
-    nis2_notification_at || null,        // ✅ NOUVEAU
-    nis2_final_report_at || null,        // ✅ NOUVEAU
+    nis2_early_warning_at || null,
+    nis2_notification_at || null,
+    nis2_final_report_at || null,
     targetId
   )
 

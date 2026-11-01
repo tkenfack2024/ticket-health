@@ -997,7 +997,41 @@ async function createTicketFromRequestTurso(tursoDb, requestId, service, request
     ]
   })
 
-  const ticketId = Number(insertResult.lastInsertRowid)
+    const ticketId = Number(insertResult.lastInsertRowid)
+
+  // ✅ NOUVEAU : Appliquer le SLA (version Turso)
+  try {
+    const priority = service.sla_hours <= 2 ? 'Urgente' : service.sla_hours <= 24 ? 'Haute' : 'Moyenne'
+    
+    const policyResult = await tursoDb.execute({
+      sql: 'SELECT * FROM sla_policies WHERE priority = ? AND active = 1',
+      args: [priority]
+    })
+    const policy = policyResult.rows[0]
+
+    if (policy) {
+      const ticketResult = await tursoDb.execute({
+        sql: 'SELECT created_at FROM tickets WHERE id = ?',
+        args: [ticketId]
+      })
+      const createdAt = new Date(ticketResult.rows[0].created_at.replace(' ', 'T'))
+      
+      const responseDeadline = new Date(createdAt.getTime() + policy.response_minutes * 60 * 1000)
+      const resolutionDeadline = new Date(createdAt.getTime() + policy.resolution_minutes * 60 * 1000)
+
+      const formatDate = (d) => {
+        const pad = (n) => String(n).padStart(2, '0')
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+      }
+
+      await tursoDb.execute({
+        sql: 'UPDATE tickets SET sla_response_deadline = ?, sla_resolution_deadline = ? WHERE id = ?',
+        args: [formatDate(responseDeadline), formatDate(resolutionDeadline), ticketId]
+      })
+    }
+  } catch (err) {
+    console.error('Erreur application SLA catalogue Turso:', err)
+  }
 
   // Mettre à jour la demande
   await tursoDb.execute({

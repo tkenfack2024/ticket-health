@@ -73,6 +73,18 @@ export default function TicketDetail() {
     }
   }
 
+  const handlePriorityChange = async (newPriority) => {
+    setUpdating(true)
+    try {
+      await api.updateTicket(id, { priority: newPriority })
+      await load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
   const handleArchive = async () => {
     if (!confirm('Archiver ce ticket ?\n\nIl sera déplacé dans la section Archive.')) return
     try {
@@ -143,14 +155,33 @@ export default function TicketDetail() {
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                ticket.priority === 'Urgente' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-                ticket.priority === 'Haute' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
-                ticket.priority === 'Moyenne' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-              }`}>
-                {ticket.priority}
-              </span>
+                            {isAdmin ? (
+                <select
+                  value={ticket.priority}
+                  onChange={(e) => handlePriorityChange(e.target.value)}
+                  disabled={updating}
+                  className={`px-3 py-1 rounded-full text-sm font-medium border-none outline-none cursor-pointer focus:ring-2 focus:ring-blue-500 disabled:opacity-50 appearance-none ${
+                    ticket.priority === 'Urgente' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                    ticket.priority === 'Haute' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                    ticket.priority === 'Moyenne' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                    'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <option value="Basse">Basse</option>
+                  <option value="Moyenne">Moyenne</option>
+                  <option value="Haute">Haute</option>
+                  <option value="Urgente">Urgente</option>
+                </select>
+              ) : (
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  ticket.priority === 'Urgente' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                  ticket.priority === 'Haute' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
+                  ticket.priority === 'Moyenne' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                  'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                }`}>
+                  {ticket.priority}
+                </span>
+              )}
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${
                 ticket.status === 'Ouvert' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
                 ticket.status === 'En cours' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :

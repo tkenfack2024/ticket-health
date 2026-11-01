@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { createClient } from '@libsql/client';
 import { TENANTS } from './tenants.js';
 
@@ -103,10 +104,10 @@ async function seed() {
       const existing = await db.execute({ sql: 'SELECT id FROM service_catalog WHERE name = ?', args: [s.name] });
       if (existing.rows.length === 0) {
         await db.execute({
-          sql: `INSERT INTO service_catalog (name, description, category, icon, color, form_fields, sla_hours, requires_approval, approver_role)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [s.name, s.description, s.category, s.icon, s.color, s.form_fields, s.sla_hours, s.requires_approval, s.approver_role]
-        });
+  sql: `INSERT INTO service_catalog (name, description, category, icon, color, form_fields, sla_hours, requires_approval, approver_role, active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+  args: [s.name, s.description, s.category, s.icon, s.color, s.form_fields, s.sla_hours, s.requires_approval, s.approver_role]
+});
         count++;
       }
     } catch (err) {
