@@ -3,6 +3,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { encrypt, decrypt } from './encryption.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== INITIALISATION ====================
 
@@ -264,7 +265,7 @@ export function createCmdbRouter(db, logAction) {
         })
 
         const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'ci', newId, `CI créé : ${name} (${type})`)
+         await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'ci', newId, `CI créé : ${name} (${type})`)
 
         const newCiResult = await tursoDb.execute({ sql: 'SELECT * FROM configuration_items WHERE id = ?', args: [newId] })
         const newCi = newCiResult.rows[0]
@@ -328,7 +329,7 @@ export function createCmdbRouter(db, logAction) {
 
         await tursoDb.execute({ sql: `UPDATE configuration_items SET ${updates.join(', ')} WHERE id = ?`, args })
 
-        logAction(req.user.id, req.user.name, 'update', 'ci', targetId, `CI modifié`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'ci', targetId, `CI modifié`)
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM configuration_items WHERE id = ?', args: [targetId] })
         const ci = updated.rows[0]
         ci.notes = decrypt(ci.notes)
@@ -386,7 +387,7 @@ export function createCmdbRouter(db, logAction) {
         if (ticketCount > 0) return res.status(400).json({ error: `Ce CI est lié à ${ticketCount} ticket(s). Retirez les liens avant de supprimer.` })
 
         await tursoDb.execute({ sql: 'DELETE FROM configuration_items WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'ci', targetId, `CI supprimé : ${ci.name}`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'ci', targetId, `CI supprimé : ${ci.name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE CI:', err)
@@ -402,7 +403,7 @@ export function createCmdbRouter(db, logAction) {
     if (ticketCount > 0) return res.status(400).json({ error: `Ce CI est lié à ${ticketCount} ticket(s). Retirez les liens avant de supprimer.` })
 
     db.prepare('DELETE FROM configuration_items WHERE id = ?').run(targetId)
-    logAction(req.user.id, req.user.name, 'delete', 'ci', targetId, `CI supprimé : ${ci.name}`)
+    await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'ci', targetId, `CI supprimé : ${ci.name}`)
     res.json({ success: true })
   })
 
@@ -432,7 +433,7 @@ export function createCmdbRouter(db, logAction) {
         })
 
         const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'ci_relation', newId, `Relation ${relation_type} : ${p.rows[0].name} → ${c.rows[0].name}`)
+         await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'ci_relation', newId, `Relation ${relation_type} : ${p.rows[0].name} → ${c.rows[0].name}`)
         return res.status(201).json({ success: true, id: newId })
       } catch (err) {
         if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Cette relation existe déjà' })
@@ -472,7 +473,7 @@ export function createCmdbRouter(db, logAction) {
         if (check.rows.length === 0) return res.status(404).json({ error: 'Relation non trouvée' })
 
         await tursoDb.execute({ sql: 'DELETE FROM ci_relations WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'ci_relation', targetId, 'Relation supprimée')
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'ci_relation', targetId, 'Relation supprimée')
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE relation:', err)
@@ -483,7 +484,7 @@ export function createCmdbRouter(db, logAction) {
     const relation = db.prepare('SELECT * FROM ci_relations WHERE id = ?').get(targetId)
     if (!relation) return res.status(404).json({ error: 'Relation non trouvée' })
     db.prepare('DELETE FROM ci_relations WHERE id = ?').run(targetId)
-    logAction(req.user.id, req.user.name, 'delete', 'ci_relation', targetId, 'Relation supprimée')
+    await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'ci_relation', targetId, 'Relation supprimée')
     res.json({ success: true })
   })
 
@@ -547,7 +548,7 @@ export function createCmdbRouter(db, logAction) {
           args: [ticketId, ci_id, is_primary ? 1 : 0, req.user.id]
         })
 
-        logAction(req.user.id, req.user.name, 'link', 'ticket', ticketId, `CI "${c.rows[0].name}" lié au ticket`)
+         await logActionTurso(tursoDb, req.user.id, req.user.name, 'link', 'ticket', ticketId, `CI "${c.rows[0].name}" lié au ticket`)
         return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) })
       } catch (err) {
         console.error('Erreur Turso POST ticket CI:', err)
@@ -585,7 +586,7 @@ export function createCmdbRouter(db, logAction) {
       try {
         const result = await tursoDb.execute({ sql: 'DELETE FROM ticket_cis WHERE ticket_id = ? AND ci_id = ?', args: [ticketId, ciId] })
         if (result.rowsAffected === 0) return res.status(404).json({ error: 'Lien non trouvé' })
-        logAction(req.user.id, req.user.name, 'unlink', 'ticket', ticketId, `CI #${ciId} délié`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'unlink', 'ticket', ticketId, `CI #${ciId} délié`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE ticket CI:', err)
@@ -595,7 +596,7 @@ export function createCmdbRouter(db, logAction) {
 
     const result = db.prepare('DELETE FROM ticket_cis WHERE ticket_id = ? AND ci_id = ?').run(ticketId, ciId)
     if (result.changes === 0) return res.status(404).json({ error: 'Lien non trouvé' })
-    logAction(req.user.id, req.user.name, 'unlink', 'ticket', ticketId, `CI #${ciId} délié`)
+   await logActionTurso(tursoDb, req.user.id, req.user.name, 'unlink', 'ticket', ticketId, `CI #${ciId} délié`)
     res.json({ success: true })
   })
 
@@ -613,8 +614,9 @@ export function createCmdbRouter(db, logAction) {
         const existing = await tursoDb.execute({ sql: 'SELECT id FROM ticket_cis WHERE ticket_id = ? AND ci_id = ?', args: [ticketId, ciId] })
         if (existing.rows.length === 0) return res.status(404).json({ error: 'Lien non trouvé' })
 
-        await tursoDb.execute({ sql: 'UPDATE ticket_cis SET is_primary = 0 WHERE ticket_id = ?', args: [ticketId] })
+                await tursoDb.execute({ sql: 'UPDATE ticket_cis SET is_primary = 0 WHERE ticket_id = ?', args: [ticketId] })
         await tursoDb.execute({ sql: 'UPDATE ticket_cis SET is_primary = 1 WHERE ticket_id = ? AND ci_id = ?', args: [ticketId, ciId] })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'set-primary', 'ticket', ticketId, `CI #${ciId} défini comme CI principal`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso primary CI:', err)
