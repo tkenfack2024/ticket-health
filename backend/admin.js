@@ -1664,16 +1664,20 @@ export function createAdminRouter(db, logAction) {
       }
     }
 
-    if (tenantId) {
+       if (tenantId) {
       const tenant = TENANTS[tenantId]
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        const roleCheck = await tursoDb.execute({ sql: 'SELECT name FROM roles WHERE id = ?', args: [roleId] })
+        const roleName = roleCheck.rows[0]?.name || `role#${roleId}`
+
         await tursoDb.execute({
           sql: 'INSERT OR IGNORE INTO role_permissions (role_id, permission_code) VALUES (?, ?)',
           args: [roleId, permission_code]
         })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'grant-permission', 'role', roleId, `Permission "${permission_code}" accordée au rôle "${roleName}"`)
         return res.json({ success: true })
       } catch (err) {
         console.error('[TURSO] Erreur:', err.message)
@@ -1713,16 +1717,20 @@ export function createAdminRouter(db, logAction) {
       }
     }
 
-    if (tenantId) {
+       if (tenantId) {
       const tenant = TENANTS[tenantId]
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        const userCheck = await tursoDb.execute({ sql: 'SELECT email FROM users WHERE id = ?', args: [targetId] })
+        const targetEmail = userCheck.rows[0]?.email || `user#${targetId}`
+
         await tursoDb.execute({
           sql: 'INSERT OR IGNORE INTO user_permissions (user_id, permission_code, granted_by_id, granted_by_name) VALUES (?, ?, ?, ?)',
           args: [targetId, permission_code, req.user.id, req.user.name]
         })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'grant-permission', 'user', targetId, `Permission "${permission_code}" accordée à ${targetEmail}`)
         return res.status(201).json({ success: true })
       } catch (err) {
         return res.status(500).json({ error: err.message })
@@ -1763,16 +1771,20 @@ export function createAdminRouter(db, logAction) {
       }
     }
 
-    if (tenantId) {
+        if (tenantId) {
       const tenant = TENANTS[tenantId]
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
+        const userCheck = await tursoDb.execute({ sql: 'SELECT email FROM users WHERE id = ?', args: [targetId] })
+        const targetEmail = userCheck.rows[0]?.email || `user#${targetId}`
+
         await tursoDb.execute({
           sql: 'DELETE FROM user_permissions WHERE user_id = ? AND permission_code = ?',
           args: [targetId, permissionCode]
         })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'revoke-permission', 'user', targetId, `Permission "${permissionCode}" révoquée à ${targetEmail}`)
         return res.json({ success: true })
       } catch (err) {
         return res.status(500).json({ error: err.message })
@@ -2111,15 +2123,19 @@ export function createAdminRouter(db, logAction) {
       }
     }
 
-    if (tenantId) {
+        if (tenantId) {
       const tenant = TENANTS[tenantId]
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
       try {
+        const roleCheck = await tursoDb.execute({ sql: 'SELECT name FROM roles WHERE id = ?', args: [roleId] })
+        const roleName = roleCheck.rows[0]?.name || `role#${roleId}`
+
         await tursoDb.execute({
           sql: 'DELETE FROM role_permissions WHERE role_id = ? AND permission_code = ?',
           args: [roleId, permissionCode]
         })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'revoke-permission', 'role', roleId, `Permission "${permissionCode}" révoquée au rôle "${roleName}"`)
         return res.json({ success: true })
       } catch (err) {
         return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
