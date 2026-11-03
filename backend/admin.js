@@ -1826,7 +1826,7 @@ export function createAdminRouter(db, logAction) {
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
-      try {
+           try {
         const check = await tursoDb.execute({ sql: 'SELECT * FROM logs WHERE id = ?', args: [targetId] })
         if (check.rows.length === 0) return res.status(404).json({ error: 'Log non trouvé' })
 
@@ -1834,6 +1834,7 @@ export function createAdminRouter(db, logAction) {
           sql: `UPDATE logs SET reviewed = 1, reviewed_by = ?, reviewed_at = datetime('now', 'localtime') WHERE id = ?`,
           args: [req.user.name, targetId]
         })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'review', 'log', targetId, `Log #${targetId} marqué comme revu`)
         return res.json({ success: true })
       } catch (err) {
         return res.status(500).json({ error: err.message })
@@ -1877,14 +1878,17 @@ export function createAdminRouter(db, logAction) {
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
-      try {
+           try {
+        let actualCount = 0
         for (const id of log_ids) {
-          await tursoDb.execute({
+          const r = await tursoDb.execute({
             sql: `UPDATE logs SET reviewed = 1, reviewed_by = ?, reviewed_at = datetime('now', 'localtime') WHERE id = ? AND reviewed = 0`,
             args: [req.user.name, id]
           })
+          actualCount += r.rowsAffected || 0
         }
-        return res.json({ success: true, count: log_ids.length })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'bulk-review', 'log', null, `${actualCount} log(s) marqué(s) comme revu(s) (sur ${log_ids.length} demandé(s))`)
+        return res.json({ success: true, count: actualCount })
       } catch (err) {
         return res.status(500).json({ error: err.message })
       }
