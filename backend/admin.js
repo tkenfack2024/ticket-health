@@ -432,15 +432,20 @@ export function createAdminRouter(db, logAction) {
         const existing = await tursoDb.execute({ sql: 'SELECT id FROM modules WHERE LOWER(name) = ?', args: [name.toLowerCase().trim()] })
         if (existing.rows.length > 0) return res.status(409).json({ error: 'Un module avec ce nom existe déjà' })
 
-        const result = await tursoDb.execute({
+                const result = await tursoDb.execute({
           sql: `INSERT INTO modules (name, description, icon, color) VALUES (?, ?, ?, ?)`,
           args: [name.trim(), description?.trim() || null, icon || 'Box', color || 'slate']
         })
 
         const newId = Number(result.lastInsertRowid)
-        const newModule = await tursoDb.execute({ sql: 'SELECT * FROM modules WHERE id = ?', args: [newId] })
-               await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'module', newId, `Module créé : ${name}`)
-        return res.status(201).json(newModule.rows[0])
+        const newModuleResult = await tursoDb.execute({
+          sql: 'SELECT * FROM modules WHERE id = ?',
+          args: [newId]
+        })
+        const newModule = newModuleResult.rows[0]
+
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'module', newId, `Module créé : ${name}`)
+        return res.status(201).json(newModule)
       } catch (err) {
         console.error('Erreur Turso POST module:', err)
         return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
@@ -496,7 +501,7 @@ export function createAdminRouter(db, logAction) {
           if (existing.rows.length > 0) return res.status(409).json({ error: 'Un module avec ce nom existe déjà' })
         }
 
-        await tursoDb.execute({
+                await tursoDb.execute({
           sql: `
             UPDATE modules SET
               name = COALESCE(?, name),
@@ -511,7 +516,13 @@ export function createAdminRouter(db, logAction) {
                  active !== undefined ? (active ? 1 : 0) : null, targetId]
         })
 
-                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'module', targetId, `Module modifié : ${updated.rows[0].name}`)
+        // ✅ Récupérer le module mis à jour
+        const updated = await tursoDb.execute({
+          sql: 'SELECT * FROM modules WHERE id = ?',
+          args: [targetId]
+        })
+
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'module', targetId, `Module modifié : ${updated.rows[0].name}`)
         return res.json(updated.rows[0])
       } catch (err) {
         console.error('Erreur Turso PATCH module:', err)
@@ -771,8 +782,15 @@ export function createAdminRouter(db, logAction) {
           sql: `INSERT INTO assets (type, name, category, brand, model, serial_number, location, assigned_to, status, purchase_date, warranty_end, editor, version, license_key, license_expires_at, license_count, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [type, name.trim(), category || null, brand || null, model || null, serial_number || null, location || null, assigned_to || null, status || (type === 'hardware' ? 'En service' : 'Active'), purchase_date || null, warranty_end || null, editor || null, version || null, license_key || null, license_expires_at || null, license_count || null, notes || null]
         })
-        const newId = Number(result.lastInsertRowid)
-                await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'asset', newId, `${type === 'hardware' ? 'Hardware' : 'Software'} créé : ${name}`)
+                const newId = Number(result.lastInsertRowid)
+
+        // ✅ Récupérer l'asset fraîchement créé
+        const newAsset = await tursoDb.execute({
+          sql: 'SELECT * FROM assets WHERE id = ?',
+          args: [newId]
+        })
+
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'asset', newId, `${type === 'hardware' ? 'Hardware' : 'Software'} créé : ${name}`)
         return res.status(201).json(newAsset.rows[0])
       } catch (err) {
         console.error('Erreur Turso POST asset:', err)
@@ -1407,7 +1425,17 @@ export function createAdminRouter(db, logAction) {
         }
       }
 
-           await logActionTurso(tursoDb, req.user.id, req.user.name, 'import', 'asset', null, `Import CSV : ${inserted.length} asset(s) créé(s), ${errors.length} erreur(s)`)
+                 // ✅ Log : Turso si tenantId, SQLite sinon
+      if (tenantId) {
+        const tenant = TENANTS[tenantId]
+        if (tenant) {
+          const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+          await logActionTurso(tursoDb, req.user.id, req.user.name, 'import', 'asset', null, `Import CSV : ${inserted.length} asset(s) créé(s), ${errors.length} erreur(s)`)
+        }
+      } else {
+        logAction(req.user.id, req.user.name, 'import', 'asset', null, `Import CSV : ${inserted.length} asset(s) créé(s), ${errors.length} erreur(s)`)
+      }
+
       res.json({ success: true, inserted: inserted.length, errors: errors.length, details: inserted, errorMessages: errors })
     } catch (err) {
       console.error(err)

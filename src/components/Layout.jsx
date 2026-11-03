@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
 import { useSystemNotifications } from '../hooks/useSystemNotifications'
 import NotificationBanner from './NotificationBanner'
+import VersionBadge from './VersionBadge'
 
 export default function Layout() {
   const { user, isAuthenticated, isAdmin, logout, hasPermission } = useAuth()
@@ -197,6 +198,8 @@ export default function Layout() {
               >
                 <LogOut size={18} /> Déconnexion
               </button>
+
+	      <VersionBadge />
             </>
           ) : (
             <>

@@ -42,11 +42,9 @@ import { initNotificationsTables, createNotification } from './notifications-db.
 import { initBannerTables, createBannerRouter } from './banners.js'
 import { initIctSupplierTables, createIctSupplierRouter } from './ict-suppliers.js'
 import { logAction as logActionHelper, logActionTurso } from './logger.js'
-
-
-// ✅ IMPORTS UNIQUES POUR TURSO
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { getSystemInfo } from './version.js'
 
 // 🛡️ Vérification d'une restauration en attente au démarrage
 const pendingRestorePath = path.join(process.cwd(), 'tickets.db.restore-pending')
@@ -1518,6 +1516,21 @@ const slaCompliance = totalEvaluated > 0
   } catch (err) {
     console.error("Erreur API Capacité:", err)
     res.status(500).json({ error: err.message })
+  }
+})
+
+// ==================== VERSION ====================
+
+app.get('/api/version', (req, res) => {
+  try {
+    const info = getSystemInfo()
+    res.json({
+      version: info.version,
+      git: info.git ? { hash: info.git.hash, author: info.git.author, date: info.git.date } : null,
+      branch: info.branch,
+    })
+  } catch (err) {
+    res.status(500).json({ error: 'Impossible de récupérer la version' })
   }
 })
 

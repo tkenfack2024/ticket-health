@@ -5,6 +5,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import ThemeToggle from './ThemeToggle'
 import NotificationBanner from './NotificationBanner'
+import VersionBadge from './VersionBadge'
 
 export default function PortalLayout() {
   const { user, logout, hasPermission } = useAuth()

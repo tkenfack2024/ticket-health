@@ -84,6 +84,9 @@ export const api = {
     body: JSON.stringify(data),
   }),
 
+// ============ VERSION ============
+getVersion: () => request('/api/version'),
+
   // ============ ADMIN ============
   adminGetUsers: () => request('/api/admin/users'),
   adminCreateUser: (data) => request('/api/admin/users', {
