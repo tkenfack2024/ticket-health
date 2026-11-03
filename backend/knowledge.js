@@ -3,6 +3,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { encrypt, decrypt } from './encryption.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== INITIALISATION DES TABLES ====================
 
@@ -387,7 +388,7 @@ export function createKnowledgeRouter(db, logAction) {
         })
 
         const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'kb_article', newId, `Article créé : ${title}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'kb_article', newId, `Article créé : ${title}`)
 
         const newArticle = await tursoDb.execute({ sql: 'SELECT * FROM kb_articles WHERE id = ?', args: [newId] })
         return res.status(201).json(newArticle.rows[0])
@@ -465,7 +466,7 @@ export function createKnowledgeRouter(db, logAction) {
                  is_known_error !== undefined ? (is_known_error ? 1 : 0) : null, encryptedWorkaround, targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'update', 'kb_article', targetId, `Article modifié`)
+               await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'kb_article', targetId, `Article modifié`)
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM kb_articles WHERE id = ?', args: [targetId] })
         return res.json(updated.rows[0])
       } catch (err) {
@@ -532,7 +533,7 @@ export function createKnowledgeRouter(db, logAction) {
         if (!isAdmin && !isAuthor) return res.status(403).json({ error: 'Vous ne pouvez pas supprimer cet article' })
 
         await tursoDb.execute({ sql: 'DELETE FROM kb_articles WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'kb_article', targetId, `Article supprimé`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'kb_article', targetId, `Article supprimé`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE article:', err)
@@ -576,11 +577,13 @@ export function createKnowledgeRouter(db, logAction) {
         if (existing.rows.length > 0) {
           const vote = existing.rows[0]
           if (vote.helpful === (helpful ? 1 : 0)) {
+                    
             await tursoDb.execute({ sql: 'DELETE FROM kb_votes WHERE id = ?', args: [vote.id] })
             await tursoDb.execute({
               sql: `UPDATE kb_articles SET helpful_yes = helpful_yes - ?, helpful_no = helpful_no - ? WHERE id = ?`,
               args: [helpful ? 1 : 0, helpful ? 0 : 1, articleId]
             })
+            await logActionTurso(tursoDb, req.user.id, req.user.name, 'unvote', 'kb_article', articleId, `Vote retiré (${helpful ? 'utile' : 'inutile'})`)
             return res.json({ action: 'removed' })
           } else {
             await tursoDb.execute({
@@ -591,6 +594,7 @@ export function createKnowledgeRouter(db, logAction) {
               sql: `UPDATE kb_articles SET helpful_yes = helpful_yes + ?, helpful_no = helpful_no + ? WHERE id = ?`,
               args: [helpful ? 1 : -1, helpful ? -1 : 1, articleId]
             })
+            await logActionTurso(tursoDb, req.user.id, req.user.name, 'vote', 'kb_article', articleId, `Vote modifié → ${helpful ? 'utile' : 'inutile'}`)
             return res.json({ action: 'changed' })
           }
         } else {
@@ -602,6 +606,7 @@ export function createKnowledgeRouter(db, logAction) {
             sql: `UPDATE kb_articles SET helpful_yes = helpful_yes + ?, helpful_no = helpful_no + ? WHERE id = ?`,
             args: [helpful ? 1 : 0, helpful ? 0 : 1, articleId]
           })
+          await logActionTurso(tursoDb, req.user.id, req.user.name, 'vote', 'kb_article', articleId, `Vote ${helpful ? 'utile' : 'inutile'} enregistré`)
           return res.json({ action: 'created' })
         }
       } catch (err) {
@@ -665,7 +670,7 @@ export function createKnowledgeRouter(db, logAction) {
           args: [articleId, ticket_id, req.user.id, req.user.name]
         })
 
-        logAction(req.user.id, req.user.name, 'link', 'kb_article', articleId, `Article lié au ticket #${ticket_id}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'link', 'kb_article', articleId, `Article lié au ticket #${ticket_id}`)
         return res.status(201).json({ success: true })
       } catch (err) {
         console.error('Erreur Turso link-ticket:', err)
