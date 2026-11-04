@@ -8,6 +8,7 @@ import {
 } from './notifications.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== INITIALISATION ====================
 
@@ -329,7 +330,7 @@ export function createChangeRouter(db, logAction) {
         })
 
         const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'change', newId, `RFC créée : ${title} (${change_type})`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'change', newId, `RFC créée : ${title} (${change_type})`)
 
         const newChangeResult = await tursoDb.execute({ sql: 'SELECT * FROM changes WHERE id = ?', args: [newId] })
         return res.status(201).json(newChangeResult.rows[0])
@@ -403,7 +404,7 @@ export function createChangeRouter(db, logAction) {
 
         await tursoDb.execute({ sql: `UPDATE changes SET ${updates.join(', ')} WHERE id = ?`, args })
 
-        logAction(req.user.id, req.user.name, 'update', 'change', targetId, `RFC modifiée`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'change', targetId, `RFC modifiée`)
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM changes WHERE id = ?', args: [targetId] })
         return res.json(updated.rows[0])
       } catch (err) {
@@ -465,7 +466,7 @@ export function createChangeRouter(db, logAction) {
           args: [newStatus, targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'submit', 'change', targetId, `RFC soumise : ${newStatus === 'scheduled' ? 'auto-approuvée (Standard)' : 'en attente d\'approbation'}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'submit', 'change', targetId, `RFC soumise : ${newStatus === 'scheduled' ? 'auto-approuvée (Standard)' : 'en attente d\'approbation'}`)
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
         const updatedResult = await tursoDb.execute({ sql: 'SELECT * FROM changes WHERE id = ?', args: [targetId] })
@@ -523,8 +524,7 @@ export function createChangeRouter(db, logAction) {
           args: [req.user.id, targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'approve', 'change', targetId, `RFC approuvée : ${change.title}`)
-
+               await logActionTurso(tursoDb, req.user.id, req.user.name, 'approve', 'change', targetId, `RFC approuvée : ${change.title}`)
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
         const updatedResult = await tursoDb.execute({ sql: 'SELECT * FROM changes WHERE id = ?', args: [targetId] })
         try { await notifyChangeDecision(tursoDb, updatedResult.rows[0], 'approved', null, frontendUrl) } catch (err) { console.error('Erreur notif décision:', err) }
@@ -573,7 +573,7 @@ export function createChangeRouter(db, logAction) {
           args: [reason.trim(), targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'reject', 'change', targetId, `RFC refusée : ${reason}`)
+               await logActionTurso(tursoDb, req.user.id, req.user.name, 'reject', 'change', targetId, `RFC refusée : ${reason}`)
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
         const updatedResult = await tursoDb.execute({ sql: 'SELECT * FROM changes WHERE id = ?', args: [targetId] })
@@ -621,7 +621,7 @@ export function createChangeRouter(db, logAction) {
           args: [targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'start', 'change', targetId, `RFC en cours : ${change.title}`)
+               await logActionTurso(tursoDb, req.user.id, req.user.name, 'start', 'change', targetId, `RFC en cours : ${change.title}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso start change:', err)
@@ -660,7 +660,7 @@ export function createChangeRouter(db, logAction) {
           args: [targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'complete', 'change', targetId, `RFC réalisée : ${change.title}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'complete', 'change', targetId, `RFC réalisée : ${change.title}`)
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
         const updatedResult = await tursoDb.execute({ sql: 'SELECT * FROM changes WHERE id = ?', args: [targetId] })
@@ -709,7 +709,7 @@ export function createChangeRouter(db, logAction) {
           args: [targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'rollback', 'change', targetId, `RFC rollback : ${change.title}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'rollback', 'change', targetId, `RFC rollback : ${change.title}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso rollback change:', err)
@@ -748,7 +748,7 @@ export function createChangeRouter(db, logAction) {
           args: [targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'close', 'change', targetId, `RFC clôturée : ${change.title}`)
+               await logActionTurso(tursoDb, req.user.id, req.user.name, 'close', 'change', targetId, `RFC clôturée : ${change.title}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso close change:', err)
@@ -778,11 +778,12 @@ export function createChangeRouter(db, logAction) {
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
-      try {
+            try {
         await tursoDb.execute({
           sql: `INSERT INTO change_tickets (change_id, ticket_id, linked_by) VALUES (?, ?, ?)`,
           args: [changeId, ticket_id, req.user.id]
         })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'link', 'change', changeId, `Ticket #${ticket_id} lié à la RFC`)
         return res.status(201).json({ success: true })
       } catch (err) {
         if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Déjà lié' })
@@ -810,11 +811,12 @@ export function createChangeRouter(db, logAction) {
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
-      try {
+           try {
         await tursoDb.execute({
           sql: `DELETE FROM change_tickets WHERE change_id = ? AND ticket_id = ?`,
           args: [req.params.id, req.params.ticketId]
         })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'unlink', 'change', parseInt(req.params.id), `Ticket #${req.params.ticketId} délié de la RFC`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso unlink-ticket:', err)
@@ -842,8 +844,8 @@ export function createChangeRouter(db, logAction) {
         const change = changeResult.rows[0]
         if (!change) return res.status(404).json({ error: 'Changement non trouvé' })
 
-        await tursoDb.execute({ sql: 'DELETE FROM changes WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'change', targetId, `RFC supprimée`)
+                await tursoDb.execute({ sql: 'DELETE FROM changes WHERE id = ?', args: [targetId] })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'change', targetId, `RFC supprimée`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso delete change:', err)
@@ -913,6 +915,7 @@ export function createChangeRouter(db, logAction) {
         console.error('Erreur Turso analyze-impact:', err)
         return res.status(500).json({ error: 'Erreur de connexion à la base de données' })
       }
+
     }
 
     // --- MODE SQLITE ---
