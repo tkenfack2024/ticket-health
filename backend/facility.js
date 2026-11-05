@@ -3,6 +3,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 
 export function initFacilityTables(db) {
   db.exec(`
@@ -120,8 +121,8 @@ export function createFacilityRouter(db, logAction) {
           sql: 'INSERT INTO sites (name, address) VALUES (?, ?)',
           args: [name.trim(), address || null]
         })
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'site', newId, `Site créé : ${name}`)
+                const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'site', newId, `Site créé : ${name}`)
         return res.status(201).json({ success: true, id: newId })
       } catch (err) {
         console.error('Erreur Turso POST site:', err)
@@ -163,8 +164,8 @@ export function createFacilityRouter(db, logAction) {
           sql: 'INSERT INTO floors (site_id, name) VALUES (?, ?)',
           args: [site_id, name.trim()]
         })
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'floor', newId, `Étage créé : ${name}`)
+              const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'floor', newId, `Étage créé : ${name}`)
         return res.status(201).json({ success: true, id: newId })
       } catch (err) {
         console.error('Erreur Turso POST floor:', err)
@@ -212,8 +213,8 @@ export function createFacilityRouter(db, logAction) {
           sql: 'INSERT INTO rooms (floor_id, name, type, code, capacity) VALUES (?, ?, ?, ?, ?)',
           args: [floor_id, name.trim(), type, code || null, capacity || 1]
         })
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'room', newId, `Salle créée : ${name}`)
+                const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'room', newId, `Salle créée : ${name}`)
         return res.status(201).json({ success: true, id: newId })
       } catch (err) {
         console.error('Erreur Turso POST room:', err)
