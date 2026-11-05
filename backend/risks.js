@@ -3,6 +3,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { logActionTurso } from './logger.js'
 
 export function initRiskTables(db) {
   db.exec(`
@@ -97,8 +98,8 @@ export function createRiskRouter(db, logAction) {
           args: [title.trim(), description, category, probability, impact, mitigation_plan, owner, status || 'Ouvert']
         })
 
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'risk', newId, `Risque créé : ${title}`)
+                const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'risk', newId, `Risque créé : ${title}`)
         return res.status(201).json({ id: newId, success: true })
       } catch (err) {
         console.error('Erreur Turso POST risk:', err)
@@ -156,7 +157,7 @@ export function createRiskRouter(db, logAction) {
           args: [title, description, category, probability, impact, mitigation_plan, owner, status, targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'update', 'risk', targetId, `Risque modifié`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'risk', targetId, `Risque modifié`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso PATCH risk:', err)
@@ -210,7 +211,7 @@ export function createRiskRouter(db, logAction) {
         if (!risk) return res.status(404).json({ error: 'Risque non trouvé' })
 
         await tursoDb.execute({ sql: 'DELETE FROM risks WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'risk', targetId, `Risque supprimé : ${risk.title}`)
+         await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'risk', targetId, `Risque supprimé : ${risk.title}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE risk:', err)
