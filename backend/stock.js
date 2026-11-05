@@ -6,6 +6,7 @@ import { TENANTS } from './tenants.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 import { createNotification } from './notifications-db.js'
 import { sendNotificationEmail } from './email.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== INITIALISATION ====================
 
@@ -100,8 +101,8 @@ export function createStockRouter(db, logAction) {
                 VALUES (?, ?, ?, ?, ?)`,
           args: [name.trim(), category || null, unit || 'pièce', qty, threshold]
         })
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'stock_item', newId, `Article ajouté : ${name}`)
+               const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'stock_item', newId, `Article ajouté : ${name}`)
         
         const newItem = await tursoDb.execute({ sql: 'SELECT * FROM stock_items WHERE id = ?', args: [newId] })
         return res.status(201).json(newItem.rows[0])
@@ -166,8 +167,8 @@ export function createStockRouter(db, logAction) {
           args: [targetId, type, qty, reason || null, req.user.id, req.user.name]
         })
 
-        const actionLabel = type === 'ENTREE' ? 'Entrée' : 'Sortie'
-        logAction(req.user.id, req.user.name, 'stock_movement', 'stock_item', targetId, `${actionLabel} de ${qty} ${item.unit} pour ${item.name}`)
+                const actionLabel = type === 'ENTREE' ? 'Entrée' : 'Sortie'
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'stock_movement', 'stock_item', targetId, `${actionLabel} de ${qty} ${item.unit} pour ${item.name}`)
 
         // ✅ NOUVEAU : Vérifier si le stock est bas
         if (type === 'SORTIE' && newQuantity <= item.min_threshold) {
