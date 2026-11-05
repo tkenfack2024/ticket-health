@@ -118,7 +118,7 @@ export function createSupplierRouter(db, logAction) {
           return res.status(403).json({ error: 'Permission suppliers.create requise' })
         }
 
-        const result = await tursoDb.execute({
+               const result = await tursoDb.execute({
           sql: `INSERT INTO suppliers (name, contact_name, email, phone, contract_type, contract_start, contract_end, status, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [name.trim(), contact_name || null, email || null, phone || null, contract_type || null,
@@ -185,7 +185,7 @@ export function createSupplierRouter(db, logAction) {
               notes = COALESCE(?, notes)
             WHERE id = ?
           `,
-          args: [name, contact_name, email, phone, contract_type, contract_start, contract_end, status, notes, targetId]
+                    args: [name || null, contact_name || null, email || null, phone || null, contract_type || null, contract_start || null, contract_end || null, status || null, notes || null, targetId]
         })
 
                 await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'supplier', targetId, `Fournisseur modifié`)
