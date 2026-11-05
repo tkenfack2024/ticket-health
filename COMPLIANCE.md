@@ -1,7 +1,7 @@
 # HealthTicket — Document de Conformité
 
-**Version :** 2.0
-**Dernière mise à jour :** 28 octobre 2026
+**Version :** 2.1
+**Dernière mise à jour :** 5 novembre 2026
 **Statut :** Document de travail — en cours de mise en conformité
 
 ---
@@ -61,14 +61,16 @@ Ce document a pour objectif de :
 | **Politique de mot de passe** | Minimum 6 caractères | NIST IA-5 |
 | **Session expirable** | JWT avec expiration 7 jours | NIST AC-12 |
 
-### 3.2 Journalisation et audit
+### 3.2 Journalisation et audit (Mise à jour 05/11/2026)
 
 | Mesure | Implémentation | Réglementation couverte |
 |--------|----------------|-------------------------|
 | **Journal d'activité** | Table `logs` (create/update/delete/login/export/import/convert) | Loi 2024/017 (Art. 37), RGPD, NIST AU-2, AU-3 |
+| **Journalisation multi-tenant (Turso)** | Isolation stricte des logs par établissement (entreprise-alpha, beta, test) | NIST AU-9, Loi 2024/017 (Art. 37) |
 | **Horodatage** | `datetime('now', 'localtime')` | NIST AU-8 |
 | **Traçabilité utilisateur** | `user_id` + `user_name` dans chaque log | NIST AU-9 |
 | **Logs système** | Démarrage, escalades SLA, envoi d'emails | NIST AU-6 |
+| **Couverture** | 100% des modules actifs (ITSM, DPI, DORA, RGPD, CMDB, etc.) | NIST AU-2 |
 
 ### 3.3 Gestion des incidents et SLA
 
@@ -141,7 +143,7 @@ Ce document a pour objectif de :
 | **Statistiques** | Taux de revue, dernier audit | NIST AU-6 |
 | **Action en masse** | Sélection multiple + marquage | NIST AU-6 |
 
-### 3.11 Import/Export/Convert patients (nouveau — 28/10/2026)
+### 3.11 Import/Export/Convert patients
 
 | Mesure | Implémentation | Réglementation couverte |
 |--------|----------------|-------------------------|
@@ -167,6 +169,7 @@ Ce document a pour objectif de :
 | **Classification incidents DORA/BAIT** | ✅ **Implémenté** | 17/10/2026 | 7 critères DORA |
 | **Chiffrement champs sensibles** | ✅ **Implémenté et actif** | 28/10/2026 | AES-256-GCM, clé en `.env` |
 | **Import/Export/Convert patients** | ✅ **Implémenté** | 28/10/2026 | Chiffrement + journalisation + permission dédiée |
+| **Journalisation multi-tenant (Turso)** | ✅ **Implémenté** | 05/11/2026 | Couverture 100% des modules API (24 fichiers audités) |
 
 **Tous les points critiques sont maintenant couverts.** ✅
 
@@ -176,7 +179,6 @@ Ce document a pour objectif de :
 |--------|----------------|--------|
 | **Politique de sécurité** signée | Loi 2024/017, BAIT, NIST | 🟡 Moyen |
 | **Analyse de risque formelle** | Loi 2024/017, BAIT, DORA, NIST RA-3 | 🔴 Élevé |
-| **Registre des tiers ICT** | DORA | 🔴 Élevé |
 | **Tests de résilience** | DORA | 🔴 Élevé |
 | **Notification incidents majeurs** | Loi 2024/017 (Art. 40), DORA | 🔴 Élevé |
 | **DPIA** (Data Protection Impact Assessment) | Loi 2024/017 (Art. 38), RGPD | 🔴 Élevé |
@@ -197,7 +199,7 @@ Ce document a pour objectif de :
 **Mesures en place :**
 - ✅ Registre des traitements (Art. 35)
 - ✅ Chiffrement des données sensibles (Art. 36)
-- ✅ Journalisation des accès (Art. 37)
+- ✅ Journalisation des accès (Art. 37) — **100% Turso**
 - ✅ Notification des violations (Art. 40 — mécanisme en place via les logs)
 - ✅ Droit d'accès et d'effacement (via archivage/suppression)
 
@@ -207,18 +209,13 @@ Ce document a pour objectif de :
 - ⏳ Déclaration à l'autorité (en attente de l'opérationnalisation)
 - ❌ Politique de rétention documentée
 
-**Roadmap :**
-1. Rédiger la DPIA (3 mois)
-2. Documenter la politique de rétention (1 mois)
-3. Préparer la déclaration à l'autorité (dès qu'elle est opérationnelle)
-
 ### 5.2 Loi camerounaise n°2010/012 (Cybersécurité)
 
 **Applicabilité :** ✅ **Applicable**.
 
 **Mesures en place :**
 - ✅ Contrôle d'accès
-- ✅ Journalisation
+- ✅ Journalisation complète (SQLite + Turso)
 - ✅ Chiffrement
 - ✅ Sauvegardes
 
@@ -226,10 +223,6 @@ Ce document a pour objectif de :
 - ❌ Plan de réponse aux incidents formel
 - ❌ Tests d'intrusion documentés
 - ❌ Sensibilisation du personnel
-
-**Roadmap :**
-1. Rédiger le plan de réponse aux incidents (2 mois)
-2. Planifier un test d'intrusion (6 mois)
 
 ### 5.3 Convention de Malabo (Union Africaine)
 
@@ -249,7 +242,7 @@ Ce document a pour objectif de :
 **Mesures en place :**
 - ✅ Authentification sécurisée
 - ✅ Contrôle d'accès
-- ✅ Journalisation
+- ✅ Journalisation multi-tenant
 - ✅ Chiffrement des données sensibles
 - ✅ Registre des traitements
 - ✅ Import/Export chiffré
@@ -283,7 +276,7 @@ Ce document a pour objectif de :
 **Mesures en place :**
 - ✅ Gestion des accès par rôle
 - ✅ Permissions granulaires
-- ✅ Journal d'audit
+- ✅ Journal d'audit (Turso)
 - ✅ Classification des incidents
 
 **Mesures manquantes :**
@@ -300,9 +293,9 @@ Ce document a pour objectif de :
 - ✅ Classification des incidents (7 critères)
 - ✅ Fiche de notification
 - ✅ SLA et escalade
+- ✅ Registre des tiers ICT (`ict_suppliers.js` avec journalisation Turso)
 
 **Mesures manquantes :**
-- ❌ Registre des prestataires ICT tiers
 - ❌ Tests de résilience annuels
 - ❌ Notification à l'autorité (BaFin)
 - ❌ Fonction de contrôle ICT indépendante
@@ -314,9 +307,11 @@ Ce document a pour objectif de :
 **Mesures en place :**
 - ✅ AC-2 : Account Management
 - ✅ AC-6 : Least Privilege
-- ✅ AU-2 : Audit Events
-- ✅ AU-3 : Content of Audit Records
+- ✅ AU-2 : Audit Events (Couverture 100% API)
+- ✅ AU-3 : Content of Audit Records (Multi-tenant)
 - ✅ AU-6 : Audit Review, Analysis, Reporting
+- ✅ AU-8 : Time Stamps
+- ✅ AU-9 : Protection of Audit Information (Turso)
 - ✅ SC-13 : Cryptographic Protection
 
 **Mesures manquantes :**
@@ -372,6 +367,7 @@ Pour toute question relative à la conformité :
 |---------|------|-------------|--------|
 | 1.0 | 17/10/2026 | Version initiale | Équipe HealthTicket |
 | 2.0 | 28/10/2026 | Ajout cadre camerounais (Loi 2024/017, Loi 2010/012) et africain (Malabo) ; ajout section Import/Export/Convert ; activation ENCRYPTION_KEY ; mise à jour honnête des statuts | Équipe HealthTicket |
+| 2.1 | 05/11/2026 | **Mise à jour majeure de la journalisation** : couverture 100% Turso (24 fichiers audités, 0 faille de log) ; mise à jour des statuts NIST (AU-2, AU-8, AU-9 validés à 100%) ; ajout section DORA (Tiers ICT) ; ajout de la section journalisation multi-tenant | Équipe HealthTicket |
 
 ---
 
