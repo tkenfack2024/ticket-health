@@ -92,10 +92,10 @@ export function createRiskRouter(db, logAction) {
           return res.status(403).json({ error: 'Permission risks.create requise' })
         }
 
-        const result = await tursoDb.execute({
+                const result = await tursoDb.execute({
           sql: `INSERT INTO risks (title, description, category, probability, impact, mitigation_plan, owner, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [title.trim(), description, category, probability, impact, mitigation_plan, owner, status || 'Ouvert']
+          args: [title.trim(), description || null, category || null, probability, impact, mitigation_plan || null, owner || null, status || 'Ouvert']
         })
 
                 const newId = Number(result.lastInsertRowid)
@@ -112,10 +112,10 @@ export function createRiskRouter(db, logAction) {
       return res.status(403).json({ error: 'Permission risks.create requise' })
     }
 
-    const result = db.prepare(`
+        const result = db.prepare(`
       INSERT INTO risks (title, description, category, probability, impact, mitigation_plan, owner, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(title.trim(), description, category, probability, impact, mitigation_plan, owner, status || 'Ouvert')
+    `).run(title.trim(), description || null, category || null, probability, impact, mitigation_plan || null, owner || null, status || 'Ouvert')
 
     logAction(req.user.id, req.user.name, 'create', 'risk', result.lastInsertRowid, `Risque créé : ${title}`)
     res.status(201).json({ id: result.lastInsertRowid, success: true })
@@ -154,7 +154,7 @@ export function createRiskRouter(db, logAction) {
               updated_at = datetime('now', 'localtime')
             WHERE id = ?
           `,
-          args: [title, description, category, probability, impact, mitigation_plan, owner, status, targetId]
+                    args: [title || null, description || null, category || null, probability || null, impact || null, mitigation_plan || null, owner || null, status || null, targetId]
         })
 
                 await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'risk', targetId, `Risque modifié`)
