@@ -3,6 +3,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { encrypt, decrypt } from './encryption.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== INITIALISATION ====================
 
@@ -226,7 +227,7 @@ export function createProblemRouter(db, logAction) {
 
         const problemId = Number(result.lastInsertRowid)
 
-        if (Array.isArray(ticket_ids) && ticket_ids.length > 0) {
+                if (Array.isArray(ticket_ids) && ticket_ids.length > 0) {
           for (const ticketId of ticket_ids) {
             try {
               await tursoDb.execute({
@@ -237,7 +238,7 @@ export function createProblemRouter(db, logAction) {
           }
         }
 
-        logAction(req.user.id, req.user.name, 'create', 'problem', problemId, `Problème créé : ${title} (${ticket_ids?.length || 0} ticket(s) liés)`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'problem', problemId, `Problème créé : ${title} (${ticket_ids?.length || 0} ticket(s) liés)`)
 
         const newProblem = await tursoDb.execute({ sql: 'SELECT * FROM problems WHERE id = ?', args: [problemId] })
         const problem = newProblem.rows[0]
@@ -311,9 +312,9 @@ export function createProblemRouter(db, logAction) {
         updates.push('updated_at = datetime(\'now\', \'localtime\')')
         args.push(targetId)
 
-        await tursoDb.execute({ sql: `UPDATE problems SET ${updates.join(', ')} WHERE id = ?`, args })
+               await tursoDb.execute({ sql: `UPDATE problems SET ${updates.join(', ')} WHERE id = ?`, args })
 
-        logAction(req.user.id, req.user.name, 'update', 'problem', targetId, `Problème modifié`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'problem', targetId, `Problème modifié`)
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM problems WHERE id = ?', args: [targetId] })
         const p = updated.rows[0]
         p.workaround = decrypt(p.workaround)
@@ -368,8 +369,8 @@ export function createProblemRouter(db, logAction) {
         const problem = checkResult.rows[0]
         if (!problem) return res.status(404).json({ error: 'Problème non trouvé' })
 
-        await tursoDb.execute({ sql: 'DELETE FROM problems WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'problem', targetId, `Problème supprimé`)
+               await tursoDb.execute({ sql: 'DELETE FROM problems WHERE id = ?', args: [targetId] })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'problem', targetId, `Problème supprimé`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE problem:', err)
@@ -405,12 +406,12 @@ export function createProblemRouter(db, logAction) {
         const t = await tursoDb.execute({ sql: 'SELECT id, title FROM tickets WHERE id = ?', args: [ticket_id] })
         if (t.rows.length === 0) return res.status(404).json({ error: 'Ticket non trouvé' })
 
-        await tursoDb.execute({
+                await tursoDb.execute({
           sql: `INSERT INTO problem_tickets (problem_id, ticket_id, linked_by_id, linked_by_name) VALUES (?, ?, ?, ?)`,
           args: [problemId, ticket_id, req.user.id, req.user.name]
         })
 
-        logAction(req.user.id, req.user.name, 'link', 'problem', problemId, `Ticket #${ticket_id} lié au problème`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'link', 'problem', problemId, `Ticket #${ticket_id} lié au problème`)
         return res.status(201).json({ success: true })
       } catch (err) {
         if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ticket déjà lié à ce problème' })
@@ -448,14 +449,14 @@ export function createProblemRouter(db, logAction) {
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
 
       try {
-        const result = await tursoDb.execute({
+               const result = await tursoDb.execute({
           sql: `DELETE FROM problem_tickets WHERE problem_id = ? AND ticket_id = ?`,
           args: [problemId, ticketId]
         })
 
         if (result.rowsAffected === 0) return res.status(404).json({ error: 'Lien non trouvé' })
 
-        logAction(req.user.id, req.user.name, 'unlink', 'problem', problemId, `Ticket #${ticketId} délié`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'unlink', 'problem', problemId, `Ticket #${ticketId} délié`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso unlink-ticket:', err)
@@ -522,12 +523,12 @@ export function createProblemRouter(db, logAction) {
 
         const kbArticleId = Number(kbResult.lastInsertRowid)
 
-        await tursoDb.execute({
+                await tursoDb.execute({
           sql: `UPDATE problems SET kb_article_id = ?, status = 'known_error', updated_at = datetime('now', 'localtime') WHERE id = ?`,
           args: [kbArticleId, problemId]
         })
 
-        logAction(req.user.id, req.user.name, 'create', 'kb_article', kbArticleId, `Article KEDB créé depuis le problème`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'kb_article', kbArticleId, `Article KEDB créé depuis le problème`)
         return res.status(201).json({ success: true, kb_article_id: kbArticleId })
       } catch (err) {
         console.error('Erreur Turso create-kb:', err)
