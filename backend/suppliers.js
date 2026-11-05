@@ -4,6 +4,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 
 export function initSupplierTables(db) {
   db.exec(`
@@ -124,8 +125,8 @@ export function createSupplierRouter(db, logAction) {
                  contract_start || null, contract_end || null, status || 'Actif', notes || null]
         })
 
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'supplier', newId, `Fournisseur créé : ${name}`)
+                const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'supplier', newId, `Fournisseur créé : ${name}`)
 
         const newSupplier = await tursoDb.execute({ sql: 'SELECT * FROM suppliers WHERE id = ?', args: [newId] })
         return res.status(201).json(newSupplier.rows[0])
@@ -187,7 +188,7 @@ export function createSupplierRouter(db, logAction) {
           args: [name, contact_name, email, phone, contract_type, contract_start, contract_end, status, notes, targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'update', 'supplier', targetId, `Fournisseur modifié`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'supplier', targetId, `Fournisseur modifié`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso PATCH supplier:', err)
@@ -241,7 +242,7 @@ export function createSupplierRouter(db, logAction) {
         if (!supplier) return res.status(404).json({ error: 'Fournisseur non trouvé' })
 
         await tursoDb.execute({ sql: 'DELETE FROM suppliers WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'supplier', targetId, `Fournisseur supprimé : ${supplier.name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'supplier', targetId, `Fournisseur supprimé : ${supplier.name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE supplier:', err)
@@ -326,7 +327,7 @@ export function createSupplierRouter(db, logAction) {
           args: [targetId, req.file.originalname, req.file.mimetype, req.file.size, req.file.buffer, req.user.id]
         })
 
-        logAction(req.user.id, req.user.name, 'upload', 'supplier', targetId, `Fichier ajouté : ${req.file.originalname}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'upload', 'supplier', targetId, `Fichier ajouté : ${req.file.originalname}`)
         return res.status(201).json({ success: true, id: Number(result.lastInsertRowid) })
       } catch (err) {
         console.error('Erreur Turso POST supplier file:', err)
