@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { authRequired } from './auth.js'
 import { decrypt } from './encryption.js'
 
+
 export function createPortalRouter(db, logAction) {
   const router = Router()
   router.use(authRequired)
