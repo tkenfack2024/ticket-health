@@ -5,6 +5,7 @@ import { encrypt, decrypt } from './encryption.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { logActionTurso } from './logger.js'
 
 export function initResourceTables(db) {
   db.exec(`
@@ -134,8 +135,8 @@ export function createResourceRouter(db, logAction) {
           sql: `INSERT INTO physical_resources (type, name, unique_code, room_id, status) VALUES (?, ?, ?, ?, ?)`,
           args: [type, name, unique_code, room_id || null, status || 'Disponible']
         })
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'resource', newId, `${type} créé(e) : ${unique_code}`)
+                const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'resource', newId, `${type} créé(e) : ${unique_code}`)
         return res.status(201).json({ success: true, id: newId })
       } catch (err) {
         if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce numéro unique existe déjà' })
@@ -362,8 +363,8 @@ export function createResourceRouter(db, logAction) {
           args: [req.params.id, req.user.id, booking_date, slot, encPatientName, encPatientDob, encStart, encEnd]
         })
 
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'book', 'resource', req.params.id, `Réservation ${slot} le ${booking_date}`)
+                const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'book', 'resource', req.params.id, `Réservation ${slot} le ${booking_date}`)
         return res.status(201).json({ success: true, id: newId })
       } catch (err) {
         if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Ce créneau est déjà réservé' })
@@ -465,8 +466,8 @@ export function createResourceRouter(db, logAction) {
         const booking = check.rows[0]
         if (!booking) return res.status(404).json({ error: 'Réservation non trouvée' })
 
-        await tursoDb.execute({ sql: 'DELETE FROM resource_bookings WHERE id = ?', args: [req.params.bookingId] })
-        logAction(req.user.id, req.user.name, 'release', 'resource', booking.resource_id, `Libération manuelle`)
+               await tursoDb.execute({ sql: 'DELETE FROM resource_bookings WHERE id = ?', args: [req.params.bookingId] })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'release', 'resource', booking.resource_id, `Libération manuelle`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso release booking:', err)
