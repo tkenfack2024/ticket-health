@@ -3,6 +3,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== INITIALISATION ====================
 
@@ -126,8 +127,8 @@ export function createIctSupplierRouter(db, logAction) {
           ],
         })
 
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'ict_supplier', newId, `Tiers ICT créé : ${name}`)
+                const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'ict_supplier', newId, `Tiers ICT créé : ${name}`)
         const newSupplier = await tursoDb.execute({ sql: 'SELECT * FROM ict_suppliers WHERE id = ?', args: [newId] })
         return res.status(201).json(newSupplier.rows[0])
       } catch (err) {
@@ -200,7 +201,7 @@ export function createIctSupplierRouter(db, logAction) {
         args.push(targetId)
 
         await tursoDb.execute({ sql: `UPDATE ict_suppliers SET ${updates.join(', ')} WHERE id = ?`, args })
-        logAction(req.user.id, req.user.name, 'update', 'ict_supplier', targetId, `Tiers ICT modifié`)
+               await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'ict_supplier', targetId, `Tiers ICT modifié`)
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM ict_suppliers WHERE id = ?', args: [targetId] })
         return res.json(updated.rows[0])
       } catch (err) {
@@ -260,8 +261,8 @@ export function createIctSupplierRouter(db, logAction) {
         const check = await tursoDb.execute({ sql: 'SELECT name FROM ict_suppliers WHERE id = ?', args: [targetId] })
         if (check.rows.length === 0) return res.status(404).json({ error: 'Tiers ICT non trouvé' })
 
-        await tursoDb.execute({ sql: 'DELETE FROM ict_suppliers WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'ict_supplier', targetId, `Tiers ICT supprimé`)
+               await tursoDb.execute({ sql: 'DELETE FROM ict_suppliers WHERE id = ?', args: [targetId] })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'ict_supplier', targetId, `Tiers ICT supprimé`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE ict_supplier:', err)
