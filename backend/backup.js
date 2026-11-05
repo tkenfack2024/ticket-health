@@ -6,6 +6,7 @@ import { TENANTS } from './tenants.js'
 import { Router } from 'express'
 import { authRequired, adminOnly } from './auth.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 
 const BACKUP_DIR = path.join(process.cwd(), 'backups')
 if (!fs.existsSync(BACKUP_DIR)) {
@@ -277,8 +278,8 @@ export function createBackupRouter(db, logAction) {
         if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.config')) {
           return res.status(403).json({ error: 'Permission backups.config requise' })
         }
-        const config = updateBackupConfig(db, req.body)
-        logAction(req.user.id, req.user.name, 'update', 'backup_config', 1, `Interval: ${config.interval_hours}h, Actif: ${config.enabled}`)
+                const config = updateBackupConfig(db, req.body)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'backup_config', 1, `Interval: ${config.interval_hours}h, Actif: ${config.enabled}`)
         return res.json(config)
       } catch (err) {
         return res.status(500).json({ error: 'Erreur de connexion' })
@@ -324,12 +325,13 @@ export function createBackupRouter(db, logAction) {
       if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
       const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
       try {
-        if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.create')) {
+                if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.create')) {
           return res.status(403).json({ error: 'Permission backups.create requise' })
         }
+        
         const { tenant_id } = req.body
         const result = await createBackup(db, { type: 'manual', tenantId: tenant_id || null, user: req.user })
-        logAction(req.user.id, req.user.name, 'create', 'backup', result.id, `Backup manuel : ${result.filename}`)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'backup', result.id, `Backup manuel : ${result.filename}`)
         return res.status(201).json(result)
       } catch (err) {
         return res.status(500).json({ error: err.message })
@@ -360,8 +362,8 @@ export function createBackupRouter(db, logAction) {
         if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'backups.delete')) {
           return res.status(403).json({ error: 'Permission backups.delete requise' })
         }
-        deleteBackup(db, req.params.id)
-        logAction(req.user.id, req.user.name, 'delete', 'backup', req.params.id, 'Backup supprimé')
+                deleteBackup(db, req.params.id)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'backup', req.params.id, 'Backup supprimé')
         return res.json({ success: true })
       } catch (err) {
         return res.status(500).json({ error: err.message })
