@@ -7,6 +7,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { encrypt, decrypt } from './encryption.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== CHIFFREMENT AES-256-GCM ====================
 // Format binaire : [version:1][iv:12][authTag:16][ciphertext]
@@ -179,13 +180,14 @@ export function createPatientsImportExportRouter(db, logAction) {
 
     try {
       let patients = []
+      let tursoDb = null
 
       // --- MODE TURSO ---
       if (effectiveTenant) {
         const tenant = TENANTS[effectiveTenant]
         if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
 
-        const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+        tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
         const result = await tursoDb.execute('SELECT * FROM patients ORDER BY patient_code ASC')
         patients = result.rows
 
@@ -214,10 +216,16 @@ export function createPatientsImportExportRouter(db, logAction) {
       const encrypted = encryptBuffer(csvBuffer, password)
 
       // Journaliser
-      logAction(
-        req.user.id, req.user.name, 'export', 'patients', null,
-        `Export de ${patients.length} patient(s) — format chiffré AES-256-GCM — tenant: ${effectiveTenant || 'local'}`
-      )
+      if (tursoDb) {
+        await logActionTurso(
+          tursoDb, req.user.id, req.user.name, 'export', 'patients', null,
+          `Export de ${patients.length} patient(s) — format chiffré AES-256-GCM — tenant: ${effectiveTenant || 'local'}`
+        )
+      } else {
+        logAction(req.user.id, req.user.name, 'export', 'patients', null,
+          `Export de ${patients.length} patient(s) — format chiffré AES-256-GCM — tenant: local`
+        )
+      }
 
       const dateStr = new Date().toISOString().slice(0, 10)
       const filename = `patients-${effectiveTenant || 'local'}-${dateStr}.enc`
@@ -268,10 +276,11 @@ export function createPatientsImportExportRouter(db, logAction) {
 
       // Détecter doublons
       let existing
+      let tursoDb = null
       if (effectiveTenant) {
         const tenant = TENANTS[effectiveTenant]
         if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
-        const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+        tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
         existing = (await tursoDb.execute('SELECT patient_code, first_name, last_name, dob FROM patients')).rows
       } else {
         existing = db.prepare('SELECT patient_code, first_name, last_name, dob FROM patients').all()
@@ -293,10 +302,17 @@ export function createPatientsImportExportRouter(db, logAction) {
         }
       }
 
-      logAction(
-        req.user.id, req.user.name, 'import-preview', 'patients', null,
-        `Aperçu import : ${data.length} lignes, ${newPatients.length} nouveaux, ${duplicates.length} doublons, ${allErrors.length} erreurs`
-      )
+      // Journaliser
+      if (tursoDb) {
+        await logActionTurso(
+          tursoDb, req.user.id, req.user.name, 'import-preview', 'patients', null,
+          `Aperçu import : ${data.length} lignes, ${newPatients.length} nouveaux, ${duplicates.length} doublons, ${allErrors.length} erreurs`
+        )
+      } else {
+        logAction(req.user.id, req.user.name, 'import-preview', 'patients', null,
+          `Aperçu import : ${data.length} lignes, ${newPatients.length} nouveaux, ${duplicates.length} doublons, ${allErrors.length} erreurs`
+        )
+      }
 
       return res.json({
         total_lines: data.length,
@@ -418,10 +434,17 @@ export function createPatientsImportExportRouter(db, logAction) {
         transaction(toInsert)
       }
 
-      logAction(
-        req.user.id, req.user.name, 'import', 'patients', null,
-        `Import de ${inserted} patient(s) sur ${toInsert.length} ligne(s) valide(s) — tenant: ${effectiveTenant || 'local'}`
-      )
+      // Journaliser
+      if (tursoDb) {
+        await logActionTurso(
+          tursoDb, req.user.id, req.user.name, 'import', 'patients', null,
+          `Import de ${inserted} patient(s) sur ${toInsert.length} ligne(s) valide(s) — tenant: ${effectiveTenant || 'local'}`
+        )
+      } else {
+        logAction(req.user.id, req.user.name, 'import', 'patients', null,
+          `Import de ${inserted} patient(s) sur ${toInsert.length} ligne(s) valide(s) — tenant: local`
+        )
+      }
 
       return res.json({
         success: true,
@@ -534,10 +557,20 @@ export function createPatientsImportExportRouter(db, logAction) {
       const encrypted = encryptBuffer(csvBuffer, password)
 
       // Journaliser
-      logAction(
-        req.user.id, req.user.name, 'convert', 'patients', null,
-        `Conversion CSV → .enc : ${outputLines.length - 1} patients, tenant: ${tenantId || 'local'}`
-      )
+      if (tenantId) {
+        const tenant = TENANTS[tenantId]
+        if (tenant) {
+          const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+          await logActionTurso(
+            tursoDb, req.user.id, req.user.name, 'convert', 'patients', null,
+            `Conversion CSV → .enc : ${outputLines.length - 1} patients, tenant: ${tenantId}`
+          )
+        }
+      } else {
+        logAction(req.user.id, req.user.name, 'convert', 'patients', null,
+          `Conversion CSV → .enc : ${outputLines.length - 1} patients, tenant: local`
+        )
+      }
 
       const dateStr = new Date().toISOString().slice(0, 10)
       const filename = `patients-convertis-${dateStr}.enc`
