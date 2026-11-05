@@ -3,6 +3,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== CONSTANTES ====================
 
@@ -201,7 +202,7 @@ export function createSlaRouter(db, logAction) {
           args: [response_minutes || null, resolution_minutes || null, escalation_percent || null, targetId]
         })
 
-        logAction(req.user.id, req.user.name, 'update', 'sla', targetId, `Politique SLA modifiée : ${policy.priority}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'sla', targetId, `Politique SLA modifiée : ${policy.priority}`)
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM sla_policies WHERE id = ?', args: [targetId] })
         return res.json(updated.rows[0])
       } catch (err) {
