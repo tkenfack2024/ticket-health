@@ -4,6 +4,7 @@ import { authRequired } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== INITIALISATION ====================
 
@@ -145,8 +146,8 @@ export function createBannerRouter(db, logAction) {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [title.trim(), message.trim(), variant || 'info', duration, starts_at || null, ends_at || null, req.user.id, req.user.name]
         })
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'system_banner', newId, `Bannière créée : ${title}`)
+                const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'system_banner', newId, `Bannière créée : ${title}`)
         const newBanner = await tursoDb.execute({ sql: 'SELECT * FROM system_banners WHERE id = ?', args: [newId] })
         const banner = newBanner.rows[0]
         return res.status(201).json({ ...banner, active: Number(banner.active) })
@@ -205,7 +206,7 @@ export function createBannerRouter(db, logAction) {
         args.push(targetId)
 
         await tursoDb.execute({ sql: `UPDATE system_banners SET ${updates.join(', ')} WHERE id = ?`, args })
-        logAction(req.user.id, req.user.name, 'update', 'system_banner', targetId, `Bannière modifiée`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'system_banner', targetId, `Bannière modifiée`)
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM system_banners WHERE id = ?', args: [targetId] })
         const banner = updated.rows[0]
         return res.json({ ...banner, active: Number(banner.active) })
@@ -266,7 +267,7 @@ export function createBannerRouter(db, logAction) {
           sql: "UPDATE system_banners SET active = ?, updated_at = datetime('now', 'localtime') WHERE id = ?",
           args: [newActive, targetId]
         })
-        logAction(req.user.id, req.user.name, newActive ? 'activate' : 'deactivate', 'system_banner', targetId, `Bannière ${newActive ? 'activée' : 'désactivée'}`)
+               await logActionTurso(tursoDb, req.user.id, req.user.name, newActive ? 'activate' : 'deactivate', 'system_banner', targetId, `Bannière ${newActive ? 'activée' : 'désactivée'}`)
         return res.json({ success: true, active: newActive })
       } catch (err) {
         console.error('Erreur Turso toggle banner:', err)
@@ -303,8 +304,8 @@ export function createBannerRouter(db, logAction) {
         const check = await tursoDb.execute({ sql: 'SELECT * FROM system_banners WHERE id = ?', args: [targetId] })
         if (check.rows.length === 0) return res.status(404).json({ error: 'Bannière non trouvée' })
 
-        await tursoDb.execute({ sql: 'DELETE FROM system_banners WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'system_banner', targetId, 'Bannière supprimée')
+               await tursoDb.execute({ sql: 'DELETE FROM system_banners WHERE id = ?', args: [targetId] })
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'system_banner', targetId, 'Bannière supprimée')
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE banner:', err)
