@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 import { sendOTPEmail } from './email.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
+import { logActionTurso } from './logger.js'
 
 export function createAuthRouter(db, logAction) {
   const router = Router()
@@ -48,7 +49,7 @@ export function createAuthRouter(db, logAction) {
         })
         const user = userResult.rows[0]
 
-        logAction(user.id, user.name, 'register', 'user', user.id, `Nouveau compte (${tenantId}) : ${user.email}`)
+                await logActionTurso(tursoDb, user.id, user.name, 'register', 'user', user.id, `Nouveau compte (${tenantId}) : ${user.email}`)
 
         const token = jwt.sign(
           { id: user.id, email: user.email, role: user.role, name: user.name, tenantId: tenantId },
@@ -115,7 +116,7 @@ export function createAuthRouter(db, logAction) {
           return res.status(401).json({ error: 'Identifiants invalides' })
         }
 
-        logAction(user.id, user.name, 'login', 'user', user.id, `Connexion (${tenantId})`)
+               await logActionTurso(tursoDb, user.id, user.name, 'login', 'user', user.id, `Connexion (${tenantId})`)
 
         // Calcul des permissions
         let permissions = []
@@ -248,8 +249,7 @@ export function createAuthRouter(db, logAction) {
         })
 
         await sendOTPEmail(user.email, code, user.name)
-        logAction(user.id, user.name, 'otp-request', 'user', user.id, `Code OTP envoyé (${tenantId})`)
-        return res.json({ success: true, message: 'Code envoyé à votre adresse email' })
+                await logActionTurso(tursoDb, user.id, user.name, 'otp-request', 'user', user.id, `Code OTP envoyé (${tenantId})`)
       } catch (err) {
         console.error('Erreur Turso request OTP:', err)
         return res.status(500).json({ error: 'Impossible d\'envoyer l\'email' })
@@ -309,8 +309,7 @@ export function createAuthRouter(db, logAction) {
           args: [user.id]
         })
 
-        logAction(user.id, user.name, 'login-otp', 'user', user.id, `Connexion par code OTP (${tenantId})`)
-
+               await logActionTurso(tursoDb, user.id, user.name, 'login-otp', 'user', user.id, `Connexion par code OTP (${tenantId})`)
         // Calcul des permissions
         let permissions = []
         if (user.role === 'admin') {
