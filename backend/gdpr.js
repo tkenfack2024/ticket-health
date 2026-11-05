@@ -3,6 +3,7 @@ import { authRequired, adminOnly } from './auth.js'
 import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { userHasPermission, userHasPermissionTurso } from './knowledge.js'
+import { logActionTurso } from './logger.js'
 
 // ==================== INITIALISATION ====================
 
@@ -112,8 +113,8 @@ export function createGdprRouter(db, logAction) {
           ]
         })
 
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'gdpr_processing', newId, `Traitement RGPD créé : ${name}`)
+               const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'gdpr_processing', newId, `Traitement RGPD créé : ${name}`)
         return res.status(201).json({ success: true, id: newId })
       } catch (err) {
         console.error('Erreur Turso POST gdpr:', err)
@@ -183,7 +184,7 @@ export function createGdprRouter(db, logAction) {
 
         await tursoDb.execute({ sql: `UPDATE gdpr_processing SET ${updates.join(', ')} WHERE id = ?`, args })
 
-        logAction(req.user.id, req.user.name, 'update', 'gdpr_processing', targetId, `Traitement RGPD modifié : ${existing.name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'gdpr_processing', targetId, `Traitement RGPD modifié : ${existing.name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso PATCH gdpr:', err)
@@ -238,7 +239,7 @@ export function createGdprRouter(db, logAction) {
         if (!existing) return res.status(404).json({ error: 'Traitement non trouvé' })
 
         await tursoDb.execute({ sql: 'DELETE FROM gdpr_processing WHERE id = ?', args: [targetId] })
-        logAction(req.user.id, req.user.name, 'delete', 'gdpr_processing', targetId, `Traitement RGPD supprimé : ${existing.name}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'delete', 'gdpr_processing', targetId, `Traitement RGPD supprimé : ${existing.name}`)
         return res.json({ success: true })
       } catch (err) {
         console.error('Erreur Turso DELETE gdpr:', err)
@@ -346,8 +347,8 @@ export function createGdprRouter(db, logAction) {
                 VALUES (?, 'draft', ?, ?, ?)`,
           args: [processingId, contextStr, risksStr, measuresStr]
         })
-        const newId = Number(result.lastInsertRowid)
-        logAction(req.user.id, req.user.name, 'create', 'gdpr_dpia', newId, `AIPD créée pour traitement #${processingId}`)
+                const newId = Number(result.lastInsertRowid)
+        await logActionTurso(tursoDb, req.user.id, req.user.name, 'create', 'gdpr_dpia', newId, `AIPD créée pour traitement #${processingId}`)
         const newDpia = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_dpia WHERE id = ?', args: [newId] })
         return res.status(201).json(newDpia.rows[0])
       } catch (err) {
@@ -417,7 +418,7 @@ export function createGdprRouter(db, logAction) {
         updates.push("updated_at = datetime('now', 'localtime')")
         args.push(targetId)
         await tursoDb.execute({ sql: `UPDATE gdpr_dpia SET ${updates.join(', ')} WHERE id = ?`, args })
-        logAction(req.user.id, req.user.name, 'update', 'gdpr_dpia', targetId, `AIPD modifiée`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, 'update', 'gdpr_dpia', targetId, `AIPD modifiée`)
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_dpia WHERE id = ?', args: [targetId] })
         return res.json(updated.rows[0])
       } catch (err) {
@@ -485,7 +486,7 @@ export function createGdprRouter(db, logAction) {
                 WHERE id = ?`,
           args: [decision, req.user.name, comments || null, targetId]
         })
-        logAction(req.user.id, req.user.name, decision === 'validated' ? 'approve' : 'reject', 'gdpr_dpia', targetId, `AIPD ${decision === 'validated' ? 'validée' : 'rejetée'}`)
+                await logActionTurso(tursoDb, req.user.id, req.user.name, decision === 'validated' ? 'approve' : 'reject', 'gdpr_dpia', targetId, `AIPD ${decision === 'validated' ? 'validée' : 'rejetée'}`)
         const updated = await tursoDb.execute({ sql: 'SELECT * FROM gdpr_dpia WHERE id = ?', args: [targetId] })
         return res.json(updated.rows[0])
       } catch (err) {
