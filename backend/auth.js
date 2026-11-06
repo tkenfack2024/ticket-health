@@ -553,8 +553,10 @@ export function createAuthRouter(db, logAction) {
           args: [code, expiresAt, user.id]
         })
 
-        await sendOTPEmail(user.email, code, user.name)
-                await logActionTurso(tursoDb, user.id, user.name, 'otp-request', 'user', user.id, `Code OTP envoyé (${tenantId})`)
+                await sendOTPEmail(user.email, code, user.name)
+        await logActionTurso(tursoDb, user.id, user.name, 'otp-request', 'user', user.id, `Code OTP envoyé (${tenantId})`)
+        
+        return res.json({ success: true, message: 'Code envoyé à votre adresse email' })
       } catch (err) {
         console.error('Erreur Turso request OTP:', err)
         return res.status(500).json({ error: 'Impossible d\'envoyer l\'email' })
