@@ -112,11 +112,23 @@ export function createAuthRouter(db, logAction) {
         if (!user || !user.active || !user.password_hash) {
           return res.status(401).json({ error: 'Identifiants invalides' })
         }
-        if (!bcrypt.compareSync(password, user.password_hash)) {
+                if (!bcrypt.compareSync(password, user.password_hash)) {
           return res.status(401).json({ error: 'Identifiants invalides' })
         }
 
-               await logActionTurso(tursoDb, user.id, user.name, 'login', 'user', user.id, `Connexion (${tenantId})`)
+        // ✅ NOUVEAU : Vérification MFA
+        if (user.mfa_enabled === 1) {
+          return res.json({
+            mfaRequired: true,
+            userId: user.id,
+            tenantId: tenantId,
+            email: user.email
+          })
+        }
+
+        await logActionTurso(tursoDb, user.id, user.name, 'login', 'user', user.id, `Connexion (${tenantId})`)
+
+        // Calcul des permissions
 
         // Calcul des permissions
         let permissions = []
@@ -173,8 +185,18 @@ export function createAuthRouter(db, logAction) {
     if (!user.password_hash) {
       return res.status(401).json({ error: 'Ce compte n a pas de mot de passe' })
     }
-    if (!bcrypt.compareSync(password, user.password_hash)) {
+       if (!bcrypt.compareSync(password, user.password_hash)) {
       return res.status(401).json({ error: 'Identifiants invalides' })
+    }
+
+    // ✅ NOUVEAU : Vérification MFA
+    if (user.mfa_enabled === 1) {
+      return res.json({
+        mfaRequired: true,
+        userId: user.id,
+        tenantId: null,
+        email: user.email
+      })
     }
 
     logAction(user.id, user.name, 'login', 'user', user.id, 'Connexion par mot de passe')
@@ -216,6 +238,169 @@ export function createAuthRouter(db, logAction) {
       token,
     })
   })
+
+  // ==================== LOGIN MFA ====================
+  router.post('/login/mfa', async (req, res) => {
+    const { userId, tenantId, code } = req.body
+    const { verify } = await import('otplib')
+    const { decrypt } = await import('./encryption.js')
+    const bcrypt = (await import('bcryptjs')).default
+
+    if (!userId || !code) {
+      return res.status(400).json({ error: 'userId et code obligatoires' })
+    }
+
+    // --- Mode Turso ---
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      if (!tenant) return res.status(404).json({ error: 'Entreprise non trouvée' })
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+
+      try {
+        const result = await tursoDb.execute({
+          sql: 'SELECT * FROM users WHERE id = ?',
+          args: [userId]
+        })
+        const user = result.rows[0]
+        if (!user) return res.status(401).json({ error: 'Utilisateur non trouvé' })
+
+        let isValid = false
+
+        // 1. Vérifier si c'est un code de secours
+        if (user.mfa_recovery_codes) {
+          const codes = JSON.parse(user.mfa_recovery_codes)
+          for (let i = 0; i < codes.length; i++) {
+            if (bcrypt.compareSync(code, codes[i])) {
+              // Code de secours valide → on le supprime (usage unique)
+              codes.splice(i, 1)
+              await tursoDb.execute({
+                sql: 'UPDATE users SET mfa_recovery_codes = ? WHERE id = ?',
+                args: [JSON.stringify(codes), userId]
+              })
+              isValid = true
+              break
+            }
+          }
+        }
+
+               // 2. Sinon, vérifier le code TOTP
+        if (!isValid && user.mfa_secret) {
+          const secret = decrypt(user.mfa_secret)
+          const result = await verify({ secret, token: code, window: 1 })
+          isValid = result.valid
+        }
+
+        if (!isValid) {
+          await logActionTurso(tursoDb, userId, user.name, 'login-mfa-failed', 'user', userId, 'Code MFA invalide')
+          return res.status(401).json({ error: 'Code invalide' })
+        }
+
+        await logActionTurso(tursoDb, user.id, user.name, 'login', 'user', user.id, `Connexion MFA (${tenantId})`)
+
+        // Calcul des permissions
+        let permissions = []
+        if (user.role === 'admin') {
+          const permsResult = await tursoDb.execute('SELECT code FROM permissions')
+          permissions = permsResult.rows.map(p => p.code)
+        } else {
+          if (user.custom_role) {
+            const rolePerms = await tursoDb.execute({
+              sql: `SELECT rp.permission_code as code FROM role_permissions rp JOIN roles r ON rp.role_id = r.id WHERE r.name = ?`,
+              args: [user.custom_role]
+            })
+            permissions.push(...rolePerms.rows.map(p => p.code))
+          }
+          const userPerms = await tursoDb.execute({
+            sql: 'SELECT permission_code as code FROM user_permissions WHERE user_id = ?',
+            args: [user.id]
+          })
+          permissions.push(...userPerms.rows.map(p => p.code))
+          permissions = [...new Set(permissions)]
+        }
+
+        const token = jwt.sign(
+          { id: user.id, email: user.email, role: user.role, name: user.name, tenantId },
+          process.env.JWT_SECRET,
+          { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+        )
+
+        return res.json({
+          user: {
+            id: user.id, name: user.name, email: user.email, phone: user.phone,
+            role: user.role, custom_role: user.custom_role,
+            permissions, isAdmin: user.role === 'admin', tenantId
+          },
+          token
+        })
+      } catch (err) {
+        console.error('Erreur Turso login MFA:', err)
+        return res.status(500).json({ error: 'Erreur de connexion' })
+      }
+    }
+
+    // --- Mode SQLite ---
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
+    if (!user) return res.status(401).json({ error: 'Utilisateur non trouvé' })
+
+    let isValid = false
+
+    if (user.mfa_recovery_codes) {
+      const codes = JSON.parse(user.mfa_recovery_codes)
+      for (let i = 0; i < codes.length; i++) {
+        if (bcrypt.compareSync(code, codes[i])) {
+          codes.splice(i, 1)
+          db.prepare('UPDATE users SET mfa_recovery_codes = ? WHERE id = ?').run(JSON.stringify(codes), userId)
+          isValid = true
+          break
+        }
+      }
+    }
+
+        if (!isValid && user.mfa_secret) {
+      const secret = decrypt(user.mfa_secret)
+      const result = await verify({ secret, token: code, window: 1 })
+      isValid = result.valid
+    }
+
+    if (!isValid) {
+      logAction(userId, user.name, 'login-mfa-failed', 'user', userId, 'Code MFA invalide')
+      return res.status(401).json({ error: 'Code invalide' })
+    }
+
+    logAction(user.id, user.name, 'login', 'user', user.id, 'Connexion MFA')
+
+    let permissions = []
+    if (user.role === 'admin') {
+      permissions = db.prepare('SELECT code FROM permissions').all().map(p => p.code)
+    } else {
+      if (user.custom_role) {
+        const rolePerms = db.prepare(`
+          SELECT rp.permission_code as code FROM role_permissions rp JOIN roles r ON rp.role_id = r.id WHERE r.name = ?
+        `).all(user.custom_role).map(p => p.code)
+        permissions.push(...rolePerms)
+      }
+      const userPerms = db.prepare('SELECT permission_code as code FROM user_permissions WHERE user_id = ?')
+        .all(user.id).map(p => p.code)
+      permissions.push(...userPerms)
+      permissions = [...new Set(permissions)]
+    }
+
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role, name: user.name },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    )
+
+    res.json({
+      user: {
+        id: user.id, name: user.name, email: user.email, phone: user.phone,
+        role: user.role, custom_role: user.custom_role,
+        permissions, isAdmin: user.role === 'admin'
+      },
+      token
+    })
+  })
+
 
   // ==================== OTP (laissé tel quel) ====================
     router.post('/request-otp', async (req, res) => {
@@ -468,3 +653,4 @@ export function adminOnly(req, res, next) {
   }
   next()
 }
+

@@ -15,7 +15,7 @@ const TENANTS = [
 // Calcule la route de destination selon le rôle ET les permissions granulaires
 function getTargetPath(user, redirectTo) {
   const hasAnyPermission = Array.isArray(user.permissions) && user.permissions.length > 0
-  const hasCustomRole = !!user.custom_role // <-- AJOUT ICI
+  const hasCustomRole = !!user.custom_role
   
   const canAccessBackOffice =
     user.role === 'admin' || user.role === 'technicien' || hasCustomRole || hasAnyPermission
@@ -42,6 +42,12 @@ export default function Login() {
   const [error, setError] = useState(null)
   const [info, setInfo] = useState(null)
 
+  // États MFA
+  const [mfaRequired, setMfaRequired] = useState(false)
+  const [mfaCode, setMfaCode] = useState('')
+  const [mfaUserId, setMfaUserId] = useState(null)
+  const [mfaTenantId, setMfaTenantId] = useState(null)
+
   const redirectTo = location.state?.from?.pathname || '/'
 
   const handlePasswordLogin = async (e) => {
@@ -50,8 +56,16 @@ export default function Login() {
     setError(null)
     try {
       const res = await api.login({ email, password, tenantId })
-      const freshUser = await login(res.user, res.token)
       
+      // ✅ NOUVEAU : Cas MFA
+      if (res.mfaRequired) {
+        setMfaRequired(true)
+        setMfaUserId(res.userId)
+        setMfaTenantId(res.tenantId)
+        return
+      }
+      
+      const freshUser = await login(res.user, res.token)
       const targetPath = getTargetPath(freshUser, redirectTo)
       navigate(targetPath, { replace: true })
     } catch (err) {
@@ -61,13 +75,34 @@ export default function Login() {
     }
   }
 
-    const handleRequestOtp = async (e) => {
+  // ✅ NOUVEAU : Vérification MFA
+  const handleMfaVerify = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await api.post('/api/auth/login/mfa', {
+        userId: mfaUserId,
+        tenantId: mfaTenantId,
+        code: mfaCode
+      })
+      const freshUser = await login(res.user, res.token)
+      const targetPath = getTargetPath(freshUser, redirectTo)
+      navigate(targetPath, { replace: true })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRequestOtp = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     setInfo(null)
     try {
-      await api.requestOtp(email, tenantId) // <-- Ajout de tenantId
+      await api.requestOtp(email, tenantId)
       setOtpSent(true)
       setInfo('Code envoyé à votre adresse email. Vérifiez votre boîte (et le dossier spam).')
     } catch (err) {
@@ -77,12 +112,12 @@ export default function Login() {
     }
   }
 
-    const handleVerifyOtp = async (e) => {
+  const handleVerifyOtp = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
-      const res = await api.verifyOtp(email, otpCode, tenantId) // <-- Ajout de tenantId
+      const res = await api.verifyOtp(email, otpCode, tenantId)
       const freshUser = await login(res.user, res.token)
       
       const targetPath = getTargetPath(freshUser, redirectTo)
@@ -113,6 +148,7 @@ export default function Login() {
         </div>
 
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 transition-colors">
+          
           {/* Sélection de l'entreprise */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
@@ -134,31 +170,33 @@ export default function Login() {
             </div>
           </div>
 
-          {/* Onglets */}
-          <div className="flex gap-2 mb-6 bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
-            <button
-              type="button"
-              onClick={() => { setMode('password'); setError(null); setInfo(null) }}
-              className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-                mode === 'password'
-                  ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              Mot de passe
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode('otp'); setError(null); setInfo(null) }}
-              className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-                mode === 'otp'
-                  ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              Code par email
-            </button>
-          </div>
+          {/* Onglets (seulement si pas de MFA en cours) */}
+          {!mfaRequired && (
+            <div className="flex gap-2 mb-6 bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+              <button
+                type="button"
+                onClick={() => { setMode('password'); setError(null); setInfo(null) }}
+                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
+                  mode === 'password'
+                    ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                Mot de passe
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode('otp'); setError(null); setInfo(null) }}
+                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
+                  mode === 'otp'
+                    ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                Code par email
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 px-3 py-2 rounded-lg text-sm">
@@ -171,8 +209,56 @@ export default function Login() {
             </div>
           )}
 
-          {/* Mode password */}
-          {mode === 'password' && (
+          {/* ✅ ÉCRAN MFA */}
+          {mfaRequired && (
+            <form onSubmit={handleMfaVerify} className="space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                <p className="text-sm text-blue-800 dark:text-blue-300 font-medium">
+                  🔐 Authentification à deux facteurs requise
+                </p>
+                <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                  Ouvrez votre application d'authentification et saisissez le code à 6 chiffres (ou un code de secours).
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                  Code de vérification
+                </label>
+                <input
+                  type="text"
+                  required
+                  inputMode="numeric"
+                  pattern="[0-9]{6}|[A-F0-9]{8}"
+                  maxLength={8}
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.toUpperCase().replace(/[^A-F0-9]/g, ''))}
+                  placeholder="123456"
+                  className="w-full px-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest font-mono"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading || mfaCode.length < 6}
+                className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
+              >
+                {loading && <Loader2 size={18} className="animate-spin" />}
+                Vérifier
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setMfaRequired(false); setMfaCode(''); setError(null) }}
+                className="w-full text-slate-500 dark:text-slate-400 text-sm hover:underline"
+              >
+                ← Retour
+              </button>
+            </form>
+          )}
+
+          {/* ✅ MODE PASSWORD */}
+          {!mfaRequired && mode === 'password' && (
             <form onSubmit={handlePasswordLogin} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Email</label>
@@ -184,7 +270,7 @@ export default function Login() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="votre@email.com"
-                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -198,7 +284,7 @@ export default function Login() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -213,8 +299,8 @@ export default function Login() {
             </form>
           )}
 
-          {/* Mode OTP */}
-          {mode === 'otp' && !otpSent && (
+          {/* ✅ MODE OTP (Demande) */}
+          {!mfaRequired && mode === 'otp' && !otpSent && (
             <form onSubmit={handleRequestOtp} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Email</label>
@@ -226,7 +312,7 @@ export default function Login() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="votre@email.com"
-                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -241,7 +327,8 @@ export default function Login() {
             </form>
           )}
 
-          {mode === 'otp' && otpSent && (
+          {/* ✅ MODE OTP (Vérification) */}
+          {!mfaRequired && mode === 'otp' && otpSent && (
             <form onSubmit={handleVerifyOtp} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
@@ -258,7 +345,7 @@ export default function Login() {
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
                     placeholder="6 chiffres"
-                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest font-mono"
+                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg tracking-widest font-mono"
                   />
                 </div>
               </div>
@@ -279,6 +366,7 @@ export default function Login() {
               </button>
             </form>
           )}
+
         </div>
 
         <p className="text-center text-sm text-slate-500 dark:text-slate-400 mt-6">

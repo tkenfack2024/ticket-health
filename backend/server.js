@@ -8,6 +8,7 @@ import fs from 'fs'
 import path from 'path'
 
 import { createAuthRouter, authRequired, adminOnly } from './auth.js'
+import { createMfaRouter } from './mfa.js'
 import { testEmailConnection } from './email.js'
 import { createAdminRouter } from './admin.js'
 import { logStartup } from './version.js'
@@ -406,6 +407,7 @@ if (modulesExist === 0) {
 // ==================== ROUTES : AUTH & ADMIN ====================
 
 app.use('/api/auth', createAuthRouter(db, logAction))
+app.use('/api/auth/mfa', createMfaRouter(db, logAction))
 app.use('/api/admin/patients', upload.single('file'), createPatientsImportExportRouter(db, logAction))
 app.use('/api/admin', createAdminRouter(db, logAction))
 app.use('/api/sla', createSlaRouter(db, logAction))
