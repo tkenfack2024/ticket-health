@@ -32,10 +32,10 @@ export function createAdminRouter(db, logAction) {
         if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'users.list')) {
           return res.status(403).json({ error: 'Permission users.list requise' })
         }
-        const result = await tursoDb.execute(`
-          SELECT id, name, email, phone, role, custom_role, active, created_at
-          FROM users ORDER BY id DESC
-        `)
+       const result = await tursoDb.execute(`
+  SELECT id, name, email, phone, role, custom_role, active, mfa_enabled, created_at
+  FROM users ORDER BY id DESC
+`)
         return res.json(result.rows)
       } catch (err) {
         console.error('Erreur Turso GET users:', err)
@@ -48,9 +48,9 @@ export function createAdminRouter(db, logAction) {
       return res.status(403).json({ error: 'Permission users.list requise' })
     }
     const users = db.prepare(`
-      SELECT id, name, email, phone, role, custom_role, active, created_at
-      FROM users ORDER BY id DESC
-    `).all()
+  SELECT id, name, email, phone, role, custom_role, active, mfa_enabled, created_at
+  FROM users ORDER BY id DESC
+`).all()
     res.json(users)
   })
 
@@ -2152,6 +2152,44 @@ export function createAdminRouter(db, logAction) {
     } catch (err) {
       res.status(500).json({ error: err.message })
     }
+  })
+
+  // ---- POST /api/admin/users/:id/mfa/disable ----
+  router.post('/users/:id/mfa/disable', async (req, res) => {
+    const targetId = parseInt(req.params.id)
+    const { tenantId } = req.user
+
+    // Vérification permission
+    if (tenantId) {
+      const tenant = TENANTS[tenantId]
+      const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+      if (!await userHasPermissionTurso(tursoDb, req.user.id, req.user.role, 'users.edit')) {
+        return res.status(403).json({ error: 'Permission users.edit requise' })
+      }
+      
+      const check = await tursoDb.execute({ sql: 'SELECT name FROM users WHERE id = ?', args: [targetId] })
+      const target = check.rows[0]
+      if (!target) return res.status(404).json({ error: 'Utilisateur non trouvé' })
+
+      await tursoDb.execute({
+        sql: 'UPDATE users SET mfa_enabled = 0, mfa_secret = NULL, mfa_recovery_codes = NULL WHERE id = ?',
+        args: [targetId]
+      })
+      
+      await logActionTurso(tursoDb, req.user.id, req.user.name, 'deactivate-mfa', 'user', targetId, `MFA désactivé de force pour ${target.name}`)
+      return res.json({ success: true })
+    }
+
+    // Mode SQLite
+    if (!userHasPermission(db, req.user.id, req.user.role, 'users.edit')) {
+      return res.status(403).json({ error: 'Permission users.edit requise' })
+    }
+    const target = db.prepare('SELECT name FROM users WHERE id = ?').get(targetId)
+    if (!target) return res.status(404).json({ error: 'Utilisateur non trouvé' })
+
+    db.prepare('UPDATE users SET mfa_enabled = 0, mfa_secret = NULL, mfa_recovery_codes = NULL WHERE id = ?').run(targetId)
+    logAction(req.user.id, req.user.name, 'deactivate-mfa', 'user', targetId, `MFA désactivé de force pour ${target.name}`)
+    res.json({ success: true })
   })
 
   return router

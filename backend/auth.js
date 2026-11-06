@@ -6,6 +6,10 @@ import { createClient } from '@libsql/client'
 import { TENANTS } from './tenants.js'
 import { logActionTurso } from './logger.js'
 
+// ==================== RATE LIMITING MFA ====================
+const MFA_MAX_ATTEMPTS = 5          // 5 échecs autorisés
+const MFA_LOCK_DURATION_MS = 15 * 60 * 1000  // 15 minutes de verrouillage
+
 export function createAuthRouter(db, logAction) {
   const router = Router()
 
@@ -264,36 +268,113 @@ export function createAuthRouter(db, logAction) {
         const user = result.rows[0]
         if (!user) return res.status(401).json({ error: 'Utilisateur non trouvé' })
 
+        // ✅ RATE LIMITING — Vérifier si le compte est verrouillé
+        if (user.mfa_locked_until) {
+          const lockedUntil = new Date(user.mfa_locked_until).getTime()
+          const now = Date.now()
+          if (lockedUntil > now) {
+            const remainingMinutes = Math.ceil((lockedUntil - now) / 60000)
+            try {
+              await logActionTurso(tursoDb, userId, user.name, 'mfa-rate-limited', 'user', userId, `Compte verrouillé (${remainingMinutes} min restantes)`)
+            } catch (e) { /* log silencieux */ }
+            return res.status(429).json({
+              error: `Trop de tentatives. Compte verrouillé. Réessayez dans ${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}.`
+            })
+          } else {
+            // Le verrou a expiré : on le nettoie
+            await tursoDb.execute({
+              sql: 'UPDATE users SET mfa_locked_until = NULL, mfa_failed_attempts = 0 WHERE id = ?',
+              args: [userId]
+            })
+            user.mfa_locked_until = null
+            user.mfa_failed_attempts = 0
+          }
+        }
+
         let isValid = false
 
         // 1. Vérifier si c'est un code de secours
         if (user.mfa_recovery_codes) {
-          const codes = JSON.parse(user.mfa_recovery_codes)
-          for (let i = 0; i < codes.length; i++) {
-            if (bcrypt.compareSync(code, codes[i])) {
-              // Code de secours valide → on le supprime (usage unique)
-              codes.splice(i, 1)
-              await tursoDb.execute({
-                sql: 'UPDATE users SET mfa_recovery_codes = ? WHERE id = ?',
-                args: [JSON.stringify(codes), userId]
-              })
-              isValid = true
-              break
+          try {
+            const codes = JSON.parse(user.mfa_recovery_codes)
+            if (Array.isArray(codes)) {
+              for (let i = 0; i < codes.length; i++) {
+                let matches = false
+                try {
+                  matches = bcrypt.compareSync(code, codes[i])
+                } catch (e) {
+                  matches = false
+                }
+                if (matches) {
+                  codes.splice(i, 1)
+                  await tursoDb.execute({
+                    sql: 'UPDATE users SET mfa_recovery_codes = ? WHERE id = ?',
+                    args: [JSON.stringify(codes), userId]
+                  })
+                  isValid = true
+                  break
+                }
+              }
             }
+          } catch (err) {
+            console.error('Erreur parsing recovery codes:', err.message)
           }
         }
 
-               // 2. Sinon, vérifier le code TOTP
+        // 2. Sinon, vérifier le code TOTP
         if (!isValid && user.mfa_secret) {
-          const secret = decrypt(user.mfa_secret)
-          const result = await verify({ secret, token: code, window: 1 })
-          isValid = result.valid
+          try {
+            const secret = decrypt(user.mfa_secret)
+            if (secret && secret !== '[Erreur de déchiffrement]' && /^\d{6}$/.test(code)) {
+              const result = await verify({ secret, token: code, window: 1 })
+              isValid = result.valid
+            }
+          } catch (err) {
+            console.error('Erreur vérification TOTP:', err.message)
+          }
         }
 
+        // ✅ RATE LIMITING — Si le code est INVALIDE, incrémenter le compteur
         if (!isValid) {
-          await logActionTurso(tursoDb, userId, user.name, 'login-mfa-failed', 'user', userId, 'Code MFA invalide')
-          return res.status(401).json({ error: 'Code invalide' })
+          const currentAttempts = (user.mfa_failed_attempts || 0) + 1
+          let lockedUntil = null
+          let lockMessage = null
+
+          if (currentAttempts >= MFA_MAX_ATTEMPTS) {
+            lockedUntil = new Date(Date.now() + MFA_LOCK_DURATION_MS).toISOString()
+            lockMessage = `Compte verrouillé pour 15 minutes après ${currentAttempts} échecs.`
+            try {
+              await logActionTurso(tursoDb, userId, user.name, 'mfa-lock', 'user', userId, lockMessage)
+            } catch (e) { /* log silencieux */ }
+          }
+
+          await tursoDb.execute({
+            sql: 'UPDATE users SET mfa_failed_attempts = ?, mfa_locked_until = ? WHERE id = ?',
+            args: [currentAttempts, lockedUntil, userId]
+          })
+
+          try {
+            await logActionTurso(tursoDb, userId, user.name, 'login-mfa-failed', 'user', userId,
+              `Code invalide (tentative ${currentAttempts}/${MFA_MAX_ATTEMPTS})`)
+          } catch (e) { /* log silencieux */ }
+
+          if (lockedUntil) {
+            return res.status(429).json({
+              error: 'Trop de tentatives. Compte verrouillé pour 15 minutes.'
+            })
+          }
+
+          const remaining = MFA_MAX_ATTEMPTS - currentAttempts
+          return res.status(401).json({
+            error: `Code invalide. ${remaining} tentative${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''}.`
+          })
         }
+
+        // ✅ SUCCÈS — Réinitialiser le compteur
+        await tursoDb.execute({
+          sql: 'UPDATE users SET mfa_failed_attempts = 0, mfa_locked_until = NULL WHERE id = ?',
+          args: [userId]
+        })
 
         await logActionTurso(tursoDb, user.id, user.name, 'login', 'user', user.id, `Connexion MFA (${tenantId})`)
 
@@ -334,13 +415,30 @@ export function createAuthRouter(db, logAction) {
         })
       } catch (err) {
         console.error('Erreur Turso login MFA:', err)
-        return res.status(500).json({ error: 'Erreur de connexion' })
+        return res.status(401).json({ error: 'Code invalide' })
       }
     }
 
-    // --- Mode SQLite ---
+       // --- Mode SQLite ---
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId)
     if (!user) return res.status(401).json({ error: 'Utilisateur non trouvé' })
+
+    // ✅ RATE LIMITING SQLite
+    if (user.mfa_locked_until) {
+      const lockedUntil = new Date(user.mfa_locked_until).getTime()
+      const now = Date.now()
+      if (lockedUntil > now) {
+        const remainingMinutes = Math.ceil((lockedUntil - now) / 60000)
+        logAction(userId, user.name, 'mfa-rate-limited', 'user', userId, `Compte verrouillé (${remainingMinutes} min)`)
+        return res.status(429).json({
+          error: `Trop de tentatives. Compte verrouillé. Réessayez dans ${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''}.`
+        })
+      } else {
+        db.prepare('UPDATE users SET mfa_locked_until = NULL, mfa_failed_attempts = 0 WHERE id = ?').run(userId)
+        user.mfa_locked_until = null
+        user.mfa_failed_attempts = 0
+      }
+    }
 
     let isValid = false
 
@@ -362,10 +460,32 @@ export function createAuthRouter(db, logAction) {
       isValid = result.valid
     }
 
-    if (!isValid) {
-      logAction(userId, user.name, 'login-mfa-failed', 'user', userId, 'Code MFA invalide')
-      return res.status(401).json({ error: 'Code invalide' })
+       if (!isValid) {
+      const currentAttempts = (user.mfa_failed_attempts || 0) + 1
+      let lockedUntil = null
+
+      if (currentAttempts >= MFA_MAX_ATTEMPTS) {
+        lockedUntil = new Date(Date.now() + MFA_LOCK_DURATION_MS).toISOString()
+        logAction(userId, user.name, 'mfa-lock', 'user', userId, `Compte verrouillé après ${currentAttempts} échecs`)
+      }
+
+      db.prepare('UPDATE users SET mfa_failed_attempts = ?, mfa_locked_until = ? WHERE id = ?')
+        .run(currentAttempts, lockedUntil, userId)
+
+      logAction(userId, user.name, 'login-mfa-failed', 'user', userId, `Code invalide (tentative ${currentAttempts}/${MFA_MAX_ATTEMPTS})`)
+
+      if (lockedUntil) {
+        return res.status(429).json({ error: 'Trop de tentatives. Compte verrouillé pour 15 minutes.' })
+      }
+
+      const remaining = MFA_MAX_ATTEMPTS - currentAttempts
+      return res.status(401).json({
+        error: `Code invalide. ${remaining} tentative${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''}.`
+      })
     }
+
+    // ✅ SUCCÈS — Réinitialiser le compteur
+    db.prepare('UPDATE users SET mfa_failed_attempts = 0, mfa_locked_until = NULL WHERE id = ?').run(userId)
 
     logAction(user.id, user.name, 'login', 'user', user.id, 'Connexion MFA')
 
