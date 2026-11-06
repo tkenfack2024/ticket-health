@@ -1,7 +1,7 @@
 # HealthTicket — Document de Conformité
 
-**Version :** 2.1
-**Dernière mise à jour :** 5 novembre 2026
+**Version :** 2.2
+**Dernière mise à jour :** 6 novembre 2026
 **Statut :** Document de travail — en cours de mise en conformité
 
 ---
@@ -41,11 +41,6 @@ Ce document a pour objectif de :
 | **NIST SP 800-53** | USA | Contrôles de sécurité | ✅ **Recommandé** (référentiel international) |
 | **ISO/IEC 27001** | International | Système de management de la sécurité | ✅ **Recommandé** |
 
-**Légende :**
-- ✅ = Applicable et actuellement en cours
-- ⚠️ = Applicable sous conditions
-- ❌ = Non applicable
-
 ---
 
 ## 3. Mesures techniques en place
@@ -61,7 +56,7 @@ Ce document a pour objectif de :
 | **Politique de mot de passe** | Minimum 6 caractères | NIST IA-5 |
 | **Session expirable** | JWT avec expiration 7 jours | NIST AC-12 |
 
-### 3.2 Journalisation et audit (Mise à jour 05/11/2026)
+### 3.2 Journalisation et audit (Mise à jour 06/11/2026)
 
 | Mesure | Implémentation | Réglementation couverte |
 |--------|----------------|-------------------------|
@@ -169,7 +164,7 @@ Ce document a pour objectif de :
 | **Classification incidents DORA/BAIT** | ✅ **Implémenté** | 17/10/2026 | 7 critères DORA |
 | **Chiffrement champs sensibles** | ✅ **Implémenté et actif** | 28/10/2026 | AES-256-GCM, clé en `.env` |
 | **Import/Export/Convert patients** | ✅ **Implémenté** | 28/10/2026 | Chiffrement + journalisation + permission dédiée |
-| **Journalisation multi-tenant (Turso)** | ✅ **Implémenté** | 05/11/2026 | Couverture 100% des modules API (24 fichiers audités) |
+| **Journalisation multi-tenant (Turso)** | ✅ **Implémenté** | 06/11/2026 | Couverture 100% des modules API (24 fichiers audités) |
 
 **Tous les points critiques sont maintenant couverts.** ✅
 
@@ -177,6 +172,7 @@ Ce document a pour objectif de :
 
 | Mesure | Réglementation | Effort |
 |--------|----------------|--------|
+| **MFA obligatoire** (Admin, Médecin, Technicien) | Loi 2024/017, NIST IA-2 | 🔴 Élevé (Priorité 1) |
 | **Politique de sécurité** signée | Loi 2024/017, BAIT, NIST | 🟡 Moyen |
 | **Analyse de risque formelle** | Loi 2024/017, BAIT, DORA, NIST RA-3 | 🔴 Élevé |
 | **Tests de résilience** | DORA | 🔴 Élevé |
@@ -367,7 +363,8 @@ Pour toute question relative à la conformité :
 |---------|------|-------------|--------|
 | 1.0 | 17/10/2026 | Version initiale | Équipe HealthTicket |
 | 2.0 | 28/10/2026 | Ajout cadre camerounais (Loi 2024/017, Loi 2010/012) et africain (Malabo) ; ajout section Import/Export/Convert ; activation ENCRYPTION_KEY ; mise à jour honnête des statuts | Équipe HealthTicket |
-| 2.1 | 05/11/2026 | **Mise à jour majeure de la journalisation** : couverture 100% Turso (24 fichiers audités, 0 faille de log) ; mise à jour des statuts NIST (AU-2, AU-8, AU-9 validés à 100%) ; ajout section DORA (Tiers ICT) ; ajout de la section journalisation multi-tenant | Équipe HealthTicket |
+| 2.1 | 05/11/2026 | Mise à jour majeure de la journalisation : couverture 100% Turso (24 fichiers audités, 0 faille de log) ; mise à jour des statuts NIST (AU-2, AU-8, AU-9 validés à 100%) ; ajout section DORA (Tiers ICT) ; ajout de la section journalisation multi-tenant | Équipe HealthTicket |
+| 2.2 | 06/11/2026 | Ajout de la MFA en objectif prioritaire (P1) ; mise à jour des dettes techniques (portal.js, bugs PATCH) ; révision de la roadmap suite à l'audit de compétitivité | Équipe HealthTicket |
 
 ---
 

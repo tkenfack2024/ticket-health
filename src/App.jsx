@@ -31,6 +31,7 @@ import Resources from './pages/admin/Resources'
 import WaitingRoom from './pages/admin/WaitingRoom'
 import MedicalFollowUp from './pages/admin/MedicalFollowUp'
 import MedicalRecord from './pages/admin/MedicalRecord'
+import Security from './pages/profile/Security'
 
 // ✅ IMPORT DES 3 COMPOSANTS POUR L'ADMINISTRATION
 import Risks from './pages/admin/Risks'
@@ -63,6 +64,8 @@ function App() {
 
             {/* PROFIL */}
             <Route path="profile/notifications" element={<ProtectedRoute><ProfileNotifications /></ProtectedRoute>} />
+
+	   <Route path="profile/security" element={<ProtectedRoute><Security /></ProtectedRoute>} />
 
             {/* ========================================================= */}
             {/* ROUTES À PERMISSIONS GRANULAIRES (pas de adminOnly)        */}

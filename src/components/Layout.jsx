@@ -190,6 +190,10 @@ export default function Layout() {
               <NavLink to="/profile/notifications" className={linkClass}>
                 <Bell size={18} /> Notifications
               </NavLink>
+
+		<NavLink to="/profile/security" className={linkClass}>
+  		<Shield size={18} /> Sécurité (MFA)
+		</NavLink>
               <ThemeToggle />
 
               <button

@@ -173,5 +173,27 @@ const isValid = result.valid
     }
   })
 
+
+  // ==================== STATUT MFA ====================
+  router.get('/status', async (req, res) => {
+    const { tenantId, id: userId } = req.user
+
+    try {
+      let isEnabled = false
+      if (tenantId) {
+        const tenant = TENANTS[tenantId]
+        const tursoDb = createClient({ url: tenant.url, authToken: tenant.token })
+        const result = await tursoDb.execute({ sql: 'SELECT mfa_enabled FROM users WHERE id = ?', args: [userId] })
+        isEnabled = result.rows[0]?.mfa_enabled === 1
+      } else {
+        const row = db.prepare('SELECT mfa_enabled FROM users WHERE id = ?').get(userId)
+        isEnabled = row?.mfa_enabled === 1
+      }
+      return res.json({ enabled: isEnabled })
+    } catch (err) {
+      return res.status(500).json({ error: 'Erreur serveur' })
+    }
+  })
+
   return router
 }

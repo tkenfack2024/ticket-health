@@ -18,6 +18,7 @@ import AdminRisks from './admin/Risks'
 import AdminSuppliers from './admin/Suppliers'
 import AdminCapacity from './admin/Capacity'
 import AdminIctSuppliers from './admin/IctSuppliers'
+import AdminMfa from './admin/Mfa'
 
 // ✅ AJOUT DE L'IMPORT DU COMPOSANT BACKUP ICI
 import AdminBackup from './admin/Backup'
@@ -44,6 +45,7 @@ const TABS = [
   { id: 'patients-import-export', label: 'Import/Export Patients', icon: Users },
   { id: 'banners', label: 'Bannières', icon: Megaphone },
   { id: 'ict-suppliers', label: 'Tiers ICT (DORA)', icon: Server },
+  { id: 'mfa', label: 'Sécurité (MFA)', icon: Shield },
 ]
 
 export default function Admin() {
@@ -105,6 +107,7 @@ export default function Admin() {
 	  {activeTab === 'patients-import-export' && <AdminPatientsImportExport />}
 	  {activeTab === 'banners' && <AdminBanners />}
 	  {activeTab === 'ict-suppliers' && <AdminIctSuppliers />}
+	  {activeTab === 'mfa' && <AdminMfa />}
         </div>
       </div>
     </div>
